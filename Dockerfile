@@ -2,15 +2,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Copiar a API unificada
-COPY api/ ./api
+# Copiar a API unificada — GARANTIDO
+COPY ./api /app/api
 
-# Copiar os ficheiros estáticos
-COPY static/ ./static
+# Copiar os ficheiros estáticos — GARANTIDO
+COPY ./static /app/static
 
 ENV PORT=8080
 
-CMD exec uvicorn api.main:app --host 0.0.0.0 --port $PORT
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080"]
