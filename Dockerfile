@@ -5,10 +5,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar a pasta api/ para dentro do container
+# Copiar a API unificada
 COPY api/ ./api
+
+# Copiar os ficheiros estáticos
+COPY static/ ./static
 
 ENV PORT=8080
 
-# Arrancar FastAPI a partir de api/main.py
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080"]
