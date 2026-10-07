@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <title>Upload de Vídeo de Handball</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 500px;
+      margin: 40px auto;
+      padding: 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+    label {
+      font-weight: bold;
+      margin-top: 15px;
+      display: block;
+    }
+    input[type="file"], input[type="email"] {
+      width: 100%;
+      padding: 8px;
+      margin-top: 5px;
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background-color: #0078ff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #005fcc;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Upload de Vídeo de Handball</h2>
+  <p>Envie o seu vídeo para ser analisado automaticamente.</p>
+
+  <form action="https://SEU_DOMINIO/upload" method="post" enctype="multipart/form-data">
+    <label for="file">Vídeo (.mp4)</label>
+    <input type="file" id="file" name="file" accept="video/mp4" required>
+
+    <label for="user_email">O seu email</label>
+    <input type="email" id="user_email" name="user_email" placeholder="email@exemplo.com" required>
+
+    <button type="submit">Enviar vídeo</button>
+  </form>
+
+</body>
+</html>
