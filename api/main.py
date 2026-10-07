@@ -1,5 +1,8 @@
 from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from datetime import datetime
+from pathlib import Path
 import json
 
 from .b2_client import upload_bytes
@@ -7,7 +10,16 @@ from .utils import generate_video_id
 
 app = FastAPI()
 
+# === Servir HTML e ficheiros estáticos ===
+static_dir = Path(__file__).resolve().parent.parent / "static"
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+@app.get("/", response_class=HTMLResponse)
+def upload_page():
+    return (static_dir / "upload.html").read_text(encoding="utf-8")
+
+
+# === Endpoint principal de upload ===
 @app.post("/upload")
 async def upload_video(
     file: UploadFile = File(...),
@@ -33,6 +45,6 @@ async def upload_video(
     upload_bytes(meta_path, json.dumps(meta).encode(), content_type="application/json")
 
     return {
-        "message": "Video recebido. Será processado na próxima hora.",
+        "message": "Vídeo recebido. Será processado na próxima hora.",
         "video_id": video_id
     }
