@@ -34,6 +34,20 @@
     button:hover {
       background-color: #005fcc;
     }
+    #progress-container {
+      margin-top: 20px;
+      display: none;
+    }
+    #progress-bar {
+      width: 0%;
+      height: 20px;
+      background-color: #0078ff;
+      border-radius: 4px;
+    }
+    #status {
+      margin-top: 10px;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -41,7 +55,7 @@
   <h2>Upload de Vídeo de Handball</h2>
   <p>Envie o seu vídeo para ser analisado automaticamente.</p>
 
-  <form action="https://SEU_DOMINIO/upload" method="post" enctype="multipart/form-data">
+  <form id="uploadForm">
     <label for="file">Vídeo (.mp4)</label>
     <input type="file" id="file" name="file" accept="video/mp4" required>
 
@@ -50,6 +64,64 @@
 
     <button type="submit">Enviar vídeo</button>
   </form>
+
+  <div id="progress-container">
+    <div id="progress-bar"></div>
+  </div>
+
+  <div id="status"></div>
+
+  <script>
+    const form = document.getElementById("uploadForm");
+    const progressContainer = document.getElementById("progress-container");
+    const progressBar = document.getElementById("progress-bar");
+    const status = document.getElementById("status");
+
+    form.addEventListener("submit", function(event) {
+      event.preventDefault();
+
+      const fileInput = document.getElementById("file");
+      const emailInput = document.getElementById("user_email");
+
+      if (!fileInput.files.length) {
+        alert("Selecione um vídeo.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+      formData.append("user_email", emailInput.value);
+
+      const xhr = new XMLHttpRequest();
+
+      // URL FINAL DO TEU CLOUD RUN
+      xhr.open("POST", "https://handball-video-pipeline-4hylcsgkpq-ew.a.run.app/upload", true);
+
+      xhr.upload.onprogress = function(event) {
+        if (event.lengthComputable) {
+          const percent = (event.loaded / event.total) * 100;
+          progressContainer.style.display = "block";
+          progressBar.style.width = percent + "%";
+        }
+      };
+
+      xhr.onload = function() {
+        if (xhr.status === 200) {
+          status.innerHTML = "✔ Vídeo enviado com sucesso! Irá receber o resultado por email.";
+          progressBar.style.backgroundColor = "#00c851";
+        } else {
+          status.innerHTML = "❌ Erro ao enviar o vídeo.";
+          progressBar.style.backgroundColor = "#ff4444";
+        }
+      };
+
+      xhr.onerror = function() {
+        status.innerHTML = "❌ Erro de rede ao enviar o vídeo.";
+      };
+
+      xhr.send(formData);
+    });
+  </script>
 
 </body>
 </html>
