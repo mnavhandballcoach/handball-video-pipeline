@@ -68,8 +68,8 @@ def upload_file(api, local_path, remote_name, content_type="video/mp4"):
 
 # === DOWNLOAD MODEL ===
 def download_model(api):
-    model_remote = "models/model.pt"
-    model_local = "model.pt"
+    model_remote = "models/best.pt"
+    model_local = "best.pt"
 
     print("Downloading YOLO model...")
 
