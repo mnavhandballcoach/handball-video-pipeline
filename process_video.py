@@ -33,11 +33,11 @@ def list_files(api, prefix="incoming/"):
 
 # === DOWNLOAD FILE (B2 NATIVE, CORRECT) ===
 def download_file(api, file_name, local_path):
-    # 1) Pedir token de download para a pasta "models/"
+    # 1) Pedir token de download para a pasta "models"
     url = api["apiUrl"] + "/b2api/v2/b2_get_download_authorization"
     payload = {
         "bucketId": BUCKET_ID,
-        "fileNamePrefix": "models/",   # prefixo CORRETO
+        "fileNamePrefix": "models",   # sem barra no fim
         "validDurationInSeconds": 3600
     }
     r = requests.post(url, json=payload)
