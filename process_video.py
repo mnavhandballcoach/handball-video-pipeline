@@ -10,7 +10,11 @@ APP_KEY = os.getenv("B2_APP_KEY")
 BUCKET_ID = os.getenv("B2_BUCKET_ID")
 BUCKET_NAME = os.getenv("B2_BUCKET_NAME")
 
-# === AUTHENTICATION ===
+# === URL DO MODELO NA RELEASE ===
+MODEL_URL = "https://github.com/mnavhandballcoach/handball-video-pipeline/releases/download/model/best.pt"
+
+
+# === AUTHENTICATION (BACKBLAZE UPLOAD ONLY) ===
 def b2_auth():
     auth_str = f"{KEY_ID}:{APP_KEY}"
     encoded = base64.b64encode(auth_str.encode()).decode()
@@ -23,7 +27,7 @@ def b2_auth():
     return r.json()
 
 
-# === LIST FILES ===
+# === LIST FILES (BACKBLAZE INCOMING VIDEOS) ===
 def list_files(api, prefix="incoming/"):
     url = api["apiUrl"] + "/b2api/v2/b2_list_file_names"
     r = requests.post(url, json={"bucketId": BUCKET_ID, "prefix": prefix})
@@ -31,12 +35,10 @@ def list_files(api, prefix="incoming/"):
     return r.json().get("files", [])
 
 
-# === DOWNLOAD FILE (B2 NATIVE, CORRECT) ===
+# === DOWNLOAD VIDEO FROM BACKBLAZE (S3 ENDPOINT) ===
 def download_file(api, file_name, local_path):
-    # S3 URL
-    download_url = f"https://handball-videos.s3.eu-central-003.backblazeb2.com/{file_name}"
+    download_url = f"https://{BUCKET_NAME}.s3.eu-central-003.backblazeb2.com/{file_name}"
 
-    # S3 authentication
     s3_key = os.getenv("AWS_ACCESS_KEY_ID")
     s3_secret = os.getenv("AWS_SECRET_ACCESS_KEY")
 
@@ -49,7 +51,7 @@ def download_file(api, file_name, local_path):
     return local_path
 
 
-# === UPLOAD FILE ===
+# === UPLOAD FILE TO BACKBLAZE (B2 NATIVE) ===
 def upload_file(api, local_path, remote_name, content_type="video/mp4"):
     url = api["apiUrl"] + "/b2api/v2/b2_get_upload_url"
     r = requests.post(url, json={"bucketId": BUCKET_ID})
@@ -70,14 +72,18 @@ def upload_file(api, local_path, remote_name, content_type="video/mp4"):
     r.raise_for_status()
 
 
-# === DOWNLOAD MODEL ===
-def download_model(api):
-    model_remote = "models/best.pt"
-    model_local = "best.pt"
+# === DOWNLOAD MODEL FROM GITHUB RELEASE ===
+def download_model():
+    print("Downloading YOLO model from GitHub Release...")
 
-    print("Downloading YOLO model...")
-    download_file(api, model_remote, model_local)
-    return model_local
+    r = requests.get(MODEL_URL)
+    r.raise_for_status()
+
+    with open("best.pt", "wb") as f:
+        f.write(r.content)
+
+    print("Model downloaded successfully.")
+    return "best.pt"
 
 
 # === PROCESS VIDEO ===
@@ -97,7 +103,7 @@ def main():
     api = b2_auth()
 
     print("Downloading model...")
-    model_path = download_model(api)
+    model_path = download_model()
     model = YOLO(model_path)
 
     print("Listing incoming videos...")
