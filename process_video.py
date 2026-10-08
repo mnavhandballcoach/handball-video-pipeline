@@ -33,29 +33,21 @@ def list_files(api, prefix="incoming/"):
 
 # === DOWNLOAD FILE (B2 NATIVE, CORRECT) ===
 def download_file(api, file_name, local_path):
-    # 1) Pedir token de download para a pasta "models"
-    url = api["apiUrl"] + "/b2api/v2/b2_get_download_authorization"
-    payload = {
-        "bucketId": BUCKET_ID,
-        "fileNamePrefix": "models",   # sem barra no fim
-        "validDurationInSeconds": 3600
-    }
-    r = requests.post(url, json=payload)
-    r.raise_for_status()
-    token = r.json()["authorizationToken"]
+    # S3 URL
+    download_url = f"https://handball-videos.s3.eu-central-003.backblazeb2.com/{file_name}"
 
-    # 2) Construir URL de download
-    download_url = api["downloadUrl"] + f"/file/{BUCKET_NAME}/{file_name}"
+    # S3 authentication
+    s3_key = os.getenv("AWS_ACCESS_KEY_ID")
+    s3_secret = os.getenv("AWS_SECRET_ACCESS_KEY")
 
-    # 3) Fazer download com token
-    headers = {"Authorization": token}
-    r = requests.get(download_url, headers=headers)
+    r = requests.get(download_url, auth=(s3_key, s3_secret))
     r.raise_for_status()
 
     with open(local_path, "wb") as f:
         f.write(r.content)
 
     return local_path
+
 
 # === UPLOAD FILE ===
 def upload_file(api, local_path, remote_name, content_type="video/mp4"):
