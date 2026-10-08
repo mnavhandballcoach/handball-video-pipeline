@@ -71,20 +71,27 @@ def upload_video(local_path, remote_name):
 def process_video(model, local_video):
     print(f"Running YOLO on {local_video}...")
 
-    # Force YOLO to save inside the repo workspace
-    results = model.predict(
-        local_video,
-        save=True,
-        project="runs",       # force output folder
-        name="detect"         # force subfolder
-    )
+    # Run YOLO without forcing project/name (avoids duplicated paths)
+    results = model.predict(local_video, save=True)
 
-    # YOLO always saves the annotated video with the same name
+    # YOLO tells us exactly where it saved the output
     output_dir = results[0].save_dir
-    output_video = os.path.join(output_dir, os.path.basename(local_video))
+    raw_output_video = os.path.join(output_dir, os.path.basename(local_video))
 
-    print(f"YOLO output saved to: {output_video}")
-    return output_video
+    print(f"YOLO raw output saved to: {raw_output_video}")
+
+    # Create a stable output folder
+    stable_dir = "output"
+    os.makedirs(stable_dir, exist_ok=True)
+
+    stable_output_video = os.path.join(stable_dir, os.path.basename(local_video))
+
+    # Move the YOLO output to a stable location
+    shutil.copy(raw_output_video, stable_output_video)
+
+    print(f"Stable output saved to: {stable_output_video}")
+
+    return stable_output_video
 
 
 # === MAIN PIPELINE ===
