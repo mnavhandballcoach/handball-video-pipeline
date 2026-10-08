@@ -4,7 +4,8 @@ import shutil
 import boto3
 from ultralytics import YOLO
 
-print("USING LATEST VERSION")
+print("USING LATEST VERSION 2")
+YOLO
 
 # === MODEL FROM GITHUB RELEASE ===
 MODEL_URL = "https://github.com/mnavhandballcoach/handball-video-pipeline/releases/download/model/best.pt"
@@ -23,6 +24,8 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET
 )
 
+print("USING LATEST VERSION")
+
 
 # === DOWNLOAD MODEL ===
 def download_model():
@@ -38,10 +41,19 @@ def download_model():
     return "best.pt"
 
 
-# === LIST INCOMING VIDEOS ===
+# === LIST INCOMING VIDEOS (FILTER ONLY VIDEO FILES) ===
 def list_incoming():
     resp = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="incoming/")
-    return resp.get("Contents", [])
+    files = resp.get("Contents", [])
+
+    video_exts = (".mp4", ".mov", ".mkv", ".avi")
+
+    video_files = [
+        f for f in files
+        if f["Key"].lower().endswith(video_exts)
+    ]
+
+    return video_files
 
 
 # === DOWNLOAD VIDEO ===
