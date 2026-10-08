@@ -70,11 +70,20 @@ def upload_video(local_path, remote_name):
 # === PROCESS VIDEO ===
 def process_video(model, local_video):
     print(f"Running YOLO on {local_video}...")
-    results = model.predict(local_video, save=True)
 
+    # Force YOLO to save inside the repo workspace
+    results = model.predict(
+        local_video,
+        save=True,
+        project="runs",       # force output folder
+        name="detect"         # force subfolder
+    )
+
+    # YOLO always saves the annotated video with the same name
     output_dir = results[0].save_dir
     output_video = os.path.join(output_dir, os.path.basename(local_video))
 
+    print(f"YOLO output saved to: {output_video}")
     return output_video
 
 
