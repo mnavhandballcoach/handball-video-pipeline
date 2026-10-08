@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from pathlib import Path
 import json
@@ -9,6 +10,15 @@ from .b2_client import upload_bytes
 from .utils import generate_video_id
 
 app = FastAPI()
+
+# === CORS ===
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # ou mete "https://mnavhandballcoach.github.io"
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # === Servir HTML e ficheiros estáticos ===
 static_dir = Path(__file__).resolve().parent.parent / "static"
@@ -48,3 +58,4 @@ async def upload_video(
         "message": "Vídeo recebido. Será processado na próxima hora.",
         "video_id": video_id
     }
+
