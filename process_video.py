@@ -33,14 +33,30 @@ def list_files(api, prefix="incoming/"):
 
 # === DOWNLOAD FILE (B2 NATIVE, CORRECT) ===
 def download_file(api, file_name, local_path):
+    # 1) Pedir token de download
+    url = api["apiUrl"] + "/b2api/v2/b2_get_download_authorization"
+    payload = {
+        "bucketId": BUCKET_ID,
+        "fileNamePrefix": file_name,
+        "validDurationInSeconds": 3600
+    }
+    r = requests.post(url, json=payload)
+    r.raise_for_status()
+    token = r.json()["authorizationToken"]
+
+    # 2) Construir URL de download
     download_url = api["downloadUrl"] + f"/file/{BUCKET_NAME}/{file_name}"
-    r = requests.get(download_url)
+
+    # 3) Fazer download com token
+    headers = {"Authorization": token}
+    r = requests.get(download_url, headers=headers)
     r.raise_for_status()
 
     with open(local_path, "wb") as f:
         f.write(r.content)
 
     return local_path
+
 
 
 # === UPLOAD FILE ===
