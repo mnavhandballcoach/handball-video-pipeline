@@ -4,6 +4,8 @@ import shutil
 import boto3
 from ultralytics import YOLO
 
+print("USING LATEST VERSION")
+
 # === MODEL FROM GITHUB RELEASE ===
 MODEL_URL = "https://github.com/mnavhandballcoach/handball-video-pipeline/releases/download/model/best.pt"
 
