@@ -1,78 +1,28 @@
 import os
 import requests
-import base64
 import shutil
+import boto3
 from ultralytics import YOLO
 
-# === ENV VARS FROM GITHUB SECRETS ===
-KEY_ID = os.getenv("B2_KEY_ID")
-APP_KEY = os.getenv("B2_APP_KEY")
-BUCKET_ID = os.getenv("B2_BUCKET_ID")
-BUCKET_NAME = os.getenv("B2_BUCKET_NAME")
-
-# === URL DO MODELO NA RELEASE ===
+# === MODEL FROM GITHUB RELEASE ===
 MODEL_URL = "https://github.com/mnavhandballcoach/handball-video-pipeline/releases/download/model/best.pt"
 
+# === BACKBLAZE S3 CONFIG ===
+BUCKET_NAME = "handball-videos"
+S3_ENDPOINT = "https://s3.eu-central-003.backblazeb2.com"
 
-# === AUTHENTICATION (BACKBLAZE UPLOAD ONLY) ===
-def b2_auth():
-    auth_str = f"{KEY_ID}:{APP_KEY}"
-    encoded = base64.b64encode(auth_str.encode()).decode()
+AWS_KEY = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET = os.getenv("AWS_SECRET_ACCESS_KEY")
 
-    r = requests.get(
-        "https://api.backblazeb2.com/b2api/v2/b2_authorize_account",
-        headers={"Authorization": f"Basic {encoded}"}
-    )
-    r.raise_for_status()
-    return r.json()
-
-
-# === LIST FILES (BACKBLAZE INCOMING VIDEOS) ===
-def list_files(api, prefix="incoming/"):
-    url = api["apiUrl"] + "/b2api/v2/b2_list_file_names"
-    r = requests.post(url, json={"bucketId": BUCKET_ID, "prefix": prefix})
-    r.raise_for_status()
-    return r.json().get("files", [])
+s3 = boto3.client(
+    "s3",
+    endpoint_url=S3_ENDPOINT,
+    aws_access_key_id=AWS_KEY,
+    aws_secret_access_key=AWS_SECRET
+)
 
 
-# === DOWNLOAD VIDEO FROM BACKBLAZE (S3 ENDPOINT) ===
-def download_file(api, file_name, local_path):
-    download_url = f"https://{BUCKET_NAME}.s3.eu-central-003.backblazeb2.com/{file_name}"
-
-    s3_key = os.getenv("AWS_ACCESS_KEY_ID")
-    s3_secret = os.getenv("AWS_SECRET_ACCESS_KEY")
-
-    r = requests.get(download_url, auth=(s3_key, s3_secret))
-    r.raise_for_status()
-
-    with open(local_path, "wb") as f:
-        f.write(r.content)
-
-    return local_path
-
-
-# === UPLOAD FILE TO BACKBLAZE (B2 NATIVE) ===
-def upload_file(api, local_path, remote_name, content_type="video/mp4"):
-    url = api["apiUrl"] + "/b2api/v2/b2_get_upload_url"
-    r = requests.post(url, json={"bucketId": BUCKET_ID})
-    r.raise_for_status()
-    upload_data = r.json()
-
-    with open(local_path, "rb") as f:
-        data = f.read()
-
-    headers = {
-        "Authorization": upload_data["authorizationToken"],
-        "X-Bz-File-Name": remote_name,
-        "Content-Type": content_type,
-        "X-Bz-Content-Sha1": "do_not_verify"
-    }
-
-    r = requests.post(upload_data["uploadUrl"], headers=headers, data=data)
-    r.raise_for_status()
-
-
-# === DOWNLOAD MODEL FROM GITHUB RELEASE ===
+# === DOWNLOAD MODEL ===
 def download_model():
     print("Downloading YOLO model from GitHub Release...")
 
@@ -84,6 +34,23 @@ def download_model():
 
     print("Model downloaded successfully.")
     return "best.pt"
+
+
+# === LIST INCOMING VIDEOS ===
+def list_incoming():
+    resp = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="incoming/")
+    return resp.get("Contents", [])
+
+
+# === DOWNLOAD VIDEO ===
+def download_video(remote_name, local_path):
+    s3.download_file(BUCKET_NAME, remote_name, local_path)
+    return local_path
+
+
+# === UPLOAD VIDEO ===
+def upload_video(local_path, remote_name):
+    s3.upload_file(local_path, BUCKET_NAME, remote_name)
 
 
 # === PROCESS VIDEO ===
@@ -99,34 +66,31 @@ def process_video(model, local_video):
 
 # === MAIN PIPELINE ===
 def main():
-    print("Authenticating with Backblaze...")
-    api = b2_auth()
-
     print("Downloading model...")
     model_path = download_model()
     model = YOLO(model_path)
 
     print("Listing incoming videos...")
-    files = list_files(api, prefix="incoming/")
+    files = list_incoming()
 
     if not files:
         print("No videos to process.")
         return
 
     for file in files:
-        file_name = file["fileName"]
+        file_name = file["Key"]
         print(f"\nProcessing: {file_name}")
 
         local_input = "input.mp4"
-        download_file(api, file_name, local_input)
+        download_video(file_name, local_input)
 
         output_video = process_video(model, local_input)
 
         annotated_remote = f"processed/{os.path.basename(file_name)}"
-        upload_file(api, output_video, annotated_remote)
+        upload_video(output_video, annotated_remote)
 
         original_remote = f"processed/originals/{os.path.basename(file_name)}"
-        upload_file(api, local_input, original_remote)
+        upload_video(local_input, original_remote)
 
         print(f"Processed and uploaded: {annotated_remote}")
 
