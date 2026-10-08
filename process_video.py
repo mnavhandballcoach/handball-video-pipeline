@@ -34,7 +34,7 @@ def list_files(api, prefix="incoming/"):
 
 # === DOWNLOAD FILE ===
 def download_file(api, file_name, local_path):
-    download_url = api["downloadUrl"] + f"/file/{BUCKET_NAME}/{file_name}"
+    download_url = f"https://handball-videos.s3.eu-central-003.backblazeb2.com/{file_name}"
     r = requests.get(download_url)
     r.raise_for_status()
 
