@@ -68,30 +68,56 @@ def upload_video(local_path, remote_name):
 
 
 # === PROCESS VIDEO ===
+import cv2
+
 def process_video(model, local_video):
     print(f"Running YOLO on {local_video}...")
 
-    # Run YOLO without forcing project/name (avoids duplicated paths)
-    results = model.predict(local_video, save=True)
+    # Force YOLO to generate video
+    results = model.predict(local_video, save=True, save_vid=True)
 
-    # YOLO tells us exactly where it saved the output
     output_dir = results[0].save_dir
-    raw_output_video = os.path.join(output_dir, os.path.basename(local_video))
+    print(f"YOLO saved results to: {output_dir}")
 
-    print(f"YOLO raw output saved to: {raw_output_video}")
+    # Try to find YOLO's output video
+    for f in os.listdir(output_dir):
+        if f.lower().endswith(".mp4"):
+            output_video = os.path.join(output_dir, f)
+            print(f"YOLO output video found: {output_video}")
+            return output_video
 
-    # Create a stable output folder
-    stable_dir = "output"
-    os.makedirs(stable_dir, exist_ok=True)
+    print("YOLO did NOT generate a video. Creating one manually...")
 
-    stable_output_video = os.path.join(stable_dir, os.path.basename(local_video))
+    # Fallback: build video from frames
+    frames = sorted([
+        os.path.join(output_dir, f)
+        for f in os.listdir(output_dir)
+        if f.lower().endswith((".jpg", ".png"))
+    ])
 
-    # Move the YOLO output to a stable location
-    shutil.copy(raw_output_video, stable_output_video)
+    if not frames:
+        raise FileNotFoundError("No frames found to build fallback video.")
 
-    print(f"Stable output saved to: {stable_output_video}")
+    # Read first frame to get size
+    first = cv2.imread(frames[0])
+    h, w, _ = first.shape
 
-    return stable_output_video
+    fallback_video = os.path.join(output_dir, "fallback_output.mp4")
+    writer = cv2.VideoWriter(
+        fallback_video,
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        30,
+        (w, h)
+    )
+
+    for frame_path in frames:
+        frame = cv2.imread(frame_path)
+        writer.write(frame)
+
+    writer.release()
+
+    print(f"Fallback video created: {fallback_video}")
+    return fallback_video
 
 
 # === MAIN PIPELINE ===
