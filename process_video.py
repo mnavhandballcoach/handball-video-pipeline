@@ -12,7 +12,7 @@ from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
 
 print("\n==============================")
-print("   PROCESS VIDEO PIPELINE v3")
+print("   PROCESS VIDEO PIPELINE v4")
 print("==============================\n")
 
 # ============================
@@ -331,6 +331,29 @@ def main():
 
         output_video = process_video(model, safe_video, original_name)
 
+        # ============================
+        # DELETE BEFORE UPLOAD (FINAL FIX)
+        # ============================
+
+        print("🗑️ Deleting incoming files BEFORE upload...")
+
+        try:
+            print(f"Attempting delete: {file_name}")
+            s3.delete_object(Bucket=BUCKET_NAME, Key=file_name)
+            print(f"✔ Deleted original video: {file_name}")
+
+            json_key = file_name.replace(".mp4", ".json")
+            print(f"Attempting delete: {json_key}")
+            s3.delete_object(Bucket=BUCKET_NAME, Key=json_key)
+            print(f"✔ Deleted JSON: {json_key}")
+
+        except Exception as e:
+            print("❌ Error deleting incoming files:", e)
+
+        # ============================
+        # UPLOAD AFTER DELETE
+        # ============================
+
         annotated_remote = f"processed/{os.path.basename(output_video)}"
         upload_video(output_video, annotated_remote)
 
@@ -340,23 +363,6 @@ def main():
         video_url = f"https://f003.backblazeb2.com/file/{BUCKET_NAME}/{annotated_remote}"
 
         send_email(user_email, user_name, video_url)
-
-        print("📦 Cleaning up incoming/...")
-
-        try:
-            # Delete original video
-            print(f"Attempting delete: {file_name}")
-            s3.delete_object(Bucket=BUCKET_NAME, Key=file_name)
-            print(f"✔ Deleted original video: {file_name}")
-
-            # Delete JSON
-            json_key = file_name.replace(".mp4", ".json")
-            print(f"Attempting delete: {json_key}")
-            s3.delete_object(Bucket=BUCKET_NAME, Key=json_key)
-            print(f"✔ Deleted JSON: {json_key}")
-
-        except Exception as e:
-            print("❌ Error deleting incoming files:", e)
 
         shutil.rmtree("output", ignore_errors=True)
         os.remove(local_video)
