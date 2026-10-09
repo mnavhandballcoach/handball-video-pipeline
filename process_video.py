@@ -1,14 +1,18 @@
 import os
-import requests
+import cv2
 import shutil
 import boto3
-import cv2
+import requests
 from ultralytics import YOLO
 
-# === MODEL FROM GITHUB RELEASE ===
+print("Versão 09-10-2026 10:47")
+
+# ============================
+# CONFIG
+# ============================
+
 MODEL_URL = "https://github.com/mnavhandballcoach/handball-video-pipeline/releases/download/model/best.pt"
 
-# === BACKBLAZE S3 CONFIG ===
 BUCKET_NAME = "handball-videos"
 S3_ENDPOINT = "https://s3.eu-central-003.backblazeb2.com"
 
@@ -25,10 +29,12 @@ s3 = boto3.client(
 print("USING LATEST VERSION 2")
 
 
-# === DOWNLOAD MODEL ===
+# ============================
+# DOWNLOAD MODEL
+# ============================
+
 def download_model():
     print("Downloading YOLO model from GitHub Release...")
-
     r = requests.get(MODEL_URL)
     r.raise_for_status()
 
@@ -39,33 +45,43 @@ def download_model():
     return "best.pt"
 
 
-# === LIST INCOMING VIDEOS (FILTER ONLY VIDEO FILES) ===
+# ============================
+# LIST INCOMING VIDEOS
+# ============================
+
 def list_incoming():
     resp = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="incoming/")
     files = resp.get("Contents", [])
 
-    video_exts = (".mp4", ".mov", ".mkv", ".avi")
+    video_exts = (".mp4", ".mov", ".avi", ".mkv")
 
-    video_files = [
+    return [
         f for f in files
         if f["Key"].lower().endswith(video_exts)
     ]
 
-    return video_files
 
+# ============================
+# DOWNLOAD VIDEO
+# ============================
 
-# === DOWNLOAD VIDEO ===
 def download_video(remote_name, local_path):
     s3.download_file(BUCKET_NAME, remote_name, local_path)
     return local_path
 
 
-# === UPLOAD VIDEO ===
+# ============================
+# UPLOAD VIDEO
+# ============================
+
 def upload_video(local_path, remote_name):
     s3.upload_file(local_path, BUCKET_NAME, remote_name)
 
 
-# === PROCESS VIDEO (YOLO + BUILD VIDEO MANUALLY) ===
+# ============================
+# PROCESS VIDEO (YOLO + BUILD VIDEO)
+# ============================
+
 def process_video(model, local_video, original_name):
     print(f"Running YOLO on {local_video}...")
 
@@ -115,7 +131,10 @@ def process_video(model, local_video, original_name):
     return output_video
 
 
-# === MAIN PIPELINE ===
+# ============================
+# MAIN PIPELINE
+# ============================
+
 def main():
     print("Downloading model...")
     model_path = download_model()
@@ -147,6 +166,7 @@ def main():
 
         print(f"Processed and uploaded: {annotated_remote}")
 
+        # Cleanup
         shutil.rmtree("output", ignore_errors=True)
         shutil.rmtree(os.path.dirname(results[0].save_dir), ignore_errors=True)
         os.remove(local_input)
@@ -156,3 +176,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
