@@ -341,24 +341,20 @@ def main():
 
         send_email(user_email, user_name, video_url)
 
-        print("📦 Moving original file out of incoming/...")
+        print("📦 Cleaning up incoming/...")
 
         try:
-            copy_source = {"Bucket": BUCKET_NAME, "Key": file_name}
-            processed_original_key = file_name.replace("incoming/", "processed/originals/")
-
-            s3.copy_object(
-                Bucket=BUCKET_NAME,
-                CopySource=copy_source,
-                Key=processed_original_key
-            )
-
+            # Delete original video
             s3.delete_object(Bucket=BUCKET_NAME, Key=file_name)
+            print(f"✔ Deleted original video: {file_name}")
 
-            print(f"✔ Original moved to: {processed_original_key}\n")
+            # Delete JSON
+            json_key = file_name.replace(".mp4", ".json")
+            s3.delete_object(Bucket=BUCKET_NAME, Key=json_key)
+            print(f"✔ Deleted JSON: {json_key}")
 
         except Exception as e:
-            print("❌ Error moving original file:", e)
+            print("❌ Error deleting incoming files:", e)
 
         shutil.rmtree("output", ignore_errors=True)
         os.remove(local_video)
