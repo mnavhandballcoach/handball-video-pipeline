@@ -2,10 +2,8 @@ import os
 import requests
 import shutil
 import boto3
+import cv2
 from ultralytics import YOLO
-
-print("USING LATEST VERSION 2")
-YOLO
 
 # === MODEL FROM GITHUB RELEASE ===
 MODEL_URL = "https://github.com/mnavhandballcoach/handball-video-pipeline/releases/download/model/best.pt"
@@ -24,7 +22,7 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET
 )
 
-print("USING LATEST VERSION")
+print("USING LATEST VERSION 2")
 
 
 # === DOWNLOAD MODEL ===
@@ -67,28 +65,17 @@ def upload_video(local_path, remote_name):
     s3.upload_file(local_path, BUCKET_NAME, remote_name)
 
 
-# === PROCESS VIDEO ===
-import cv2
-
-def process_video(model, local_video):
+# === PROCESS VIDEO (YOLO + BUILD VIDEO MANUALLY) ===
+def process_video(model, local_video, original_name):
     print(f"Running YOLO on {local_video}...")
 
-    # Force YOLO to generate video
-    results = model.predict(local_video, save=True, save_vid=True)
+    # Run YOLO and save frames
+    results = model.predict(local_video, save=True)
 
     output_dir = results[0].save_dir
-    print(f"YOLO saved results to: {output_dir}")
+    print(f"YOLO saved frames to: {output_dir}")
 
-    # Try to find YOLO's output video
-    for f in os.listdir(output_dir):
-        if f.lower().endswith(".mp4"):
-            output_video = os.path.join(output_dir, f)
-            print(f"YOLO output video found: {output_video}")
-            return output_video
-
-    print("YOLO did NOT generate a video. Creating one manually...")
-
-    # Fallback: build video from frames
+    # Collect frames
     frames = sorted([
         os.path.join(output_dir, f)
         for f in os.listdir(output_dir)
@@ -96,15 +83,23 @@ def process_video(model, local_video):
     ])
 
     if not frames:
-        raise FileNotFoundError("No frames found to build fallback video.")
+        raise FileNotFoundError("YOLO did not generate any frames.")
 
     # Read first frame to get size
     first = cv2.imread(frames[0])
     h, w, _ = first.shape
 
-    fallback_video = os.path.join(output_dir, "fallback_output.mp4")
+    # Create stable output folder
+    stable_dir = "output"
+    os.makedirs(stable_dir, exist_ok=True)
+
+    # Build final annotated video name
+    base_name = os.path.splitext(original_name)[0]
+    output_video = os.path.join(stable_dir, f"{base_name}_annotated.mp4")
+
+    # Build video from frames
     writer = cv2.VideoWriter(
-        fallback_video,
+        output_video,
         cv2.VideoWriter_fourcc(*"mp4v"),
         30,
         (w, h)
@@ -116,8 +111,8 @@ def process_video(model, local_video):
 
     writer.release()
 
-    print(f"Fallback video created: {fallback_video}")
-    return fallback_video
+    print(f"Final annotated video created: {output_video}")
+    return output_video
 
 
 # === MAIN PIPELINE ===
@@ -137,20 +132,23 @@ def main():
         file_name = file["Key"]
         print(f"\nProcessing: {file_name}")
 
+        original_name = os.path.basename(file_name)
+
         local_input = "input.mp4"
         download_video(file_name, local_input)
 
-        output_video = process_video(model, local_input)
+        output_video = process_video(model, local_input, original_name)
 
-        annotated_remote = f"processed/{os.path.basename(file_name)}"
+        annotated_remote = f"processed/{os.path.basename(output_video)}"
         upload_video(output_video, annotated_remote)
 
-        original_remote = f"processed/originals/{os.path.basename(file_name)}"
+        original_remote = f"processed/originals/{original_name}"
         upload_video(local_input, original_remote)
 
         print(f"Processed and uploaded: {annotated_remote}")
 
-        shutil.rmtree(os.path.dirname(output_video), ignore_errors=True)
+        shutil.rmtree("output", ignore_errors=True)
+        shutil.rmtree(os.path.dirname(results[0].save_dir), ignore_errors=True)
         os.remove(local_input)
 
     print("\nAll videos processed.")
