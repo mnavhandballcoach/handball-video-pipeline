@@ -3,9 +3,10 @@ import cv2
 import shutil
 import boto3
 import requests
+import subprocess
 from ultralytics import YOLO
 
-print("Versão 09-10-2026 10:47")
+print("Process Video - 09102026 - 14:20")
 
 # ============================
 # CONFIG
@@ -26,7 +27,7 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET
 )
 
-print("USING LATEST VERSION 2")
+print("USING LATEST VERSION 3")
 
 
 # ============================
@@ -68,6 +69,30 @@ def list_incoming():
 def download_video(remote_name, local_path):
     s3.download_file(BUCKET_NAME, remote_name, local_path)
     return local_path
+
+
+# ============================
+# FFmpeg SAFE CONVERSION
+# ============================
+
+def convert_video_to_safe_format(input_path):
+    safe_path = "safe_input.mp4"
+
+    print("Converting video to safe format with FFmpeg...")
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", input_path,
+        "-movflags", "faststart",
+        "-pix_fmt", "yuv420p",
+        "-vf", "scale=576:1024",
+        safe_path
+    ]
+
+    subprocess.run(cmd, check=True)
+    print("Safe video created:", safe_path)
+    return safe_path
 
 
 # ============================
@@ -156,11 +181,17 @@ def main():
         local_input = "input.mp4"
         download_video(file_name, local_input)
 
-        output_video = process_video(model, local_input, original_name)
+        # Convert to safe format
+        safe_video = convert_video_to_safe_format(local_input)
 
+        # Run YOLO + build annotated video
+        output_video = process_video(model, safe_video, original_name)
+
+        # Upload annotated
         annotated_remote = f"processed/{os.path.basename(output_video)}"
         upload_video(output_video, annotated_remote)
 
+        # Upload original
         original_remote = f"processed/originals/{original_name}"
         upload_video(local_input, original_remote)
 
@@ -170,10 +201,10 @@ def main():
         shutil.rmtree("output", ignore_errors=True)
         shutil.rmtree(os.path.dirname(results[0].save_dir), ignore_errors=True)
         os.remove(local_input)
+        os.remove(safe_video)
 
     print("\nAll videos processed.")
 
 
 if __name__ == "__main__":
     main()
-
