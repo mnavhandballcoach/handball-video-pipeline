@@ -10,10 +10,9 @@ from ultralytics import YOLO
 
 print("----")
 print("----")
-print("Process Video - FIFA")
+print("Process Video - FIFA v2")
 print("----")
 print("----")
-
 
 # ============================
 # CONFIG
@@ -34,7 +33,7 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET
 )
 
-print("USING LATEST VERSION 5")
+print("USING LATEST VERSION 6")
 
 
 # ============================
@@ -110,27 +109,48 @@ def upload_video(local_path, remote_name):
 
 
 # ============================
-# FIFA STYLE DRAWING
+# FIFA STYLE DRAWING (REFINED)
 # ============================
+
+COLOR_PLAYER = (200, 230, 255)      # azul pastel
+COLOR_GOALKEEPER = (255, 220, 180)  # laranja pastel
+COLOR_REFEREE = (220, 200, 255)     # roxo pastel
 
 def draw_fifa_triangle(frame, x, y, color):
     pts = np.array([
-        [x, y - 25],
-        [x - 20, y],
-        [x + 20, y]
+        [x, y],            # topo
+        [x - 14, y - 22],  # canto esquerdo
+        [x + 14, y - 22]   # canto direito
     ], np.int32)
+
+    # Contorno preto
+    cv2.polylines(frame, [pts], True, (0, 0, 0), 2)
+
+    # Preenchimento suave
     cv2.fillPoly(frame, [pts], color)
 
 
 def draw_label(frame, x, y, label):
+    # Contorno preto
     cv2.putText(
         frame,
         label,
-        (x - 40, y - 35),
+        (x - 35, y - 30),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
+        0.55,
+        (0, 0, 0),
+        3,
+        cv2.LINE_AA
+    )
+    # Texto branco
+    cv2.putText(
+        frame,
+        label,
+        (x - 35, y - 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.55,
         (255, 255, 255),
-        2,
+        1,
         cv2.LINE_AA
     )
 
@@ -139,7 +159,12 @@ def draw_ball_circle(frame, x, y, w, h):
     radius = int(max(w, h) / 2)
     cx = x + w // 2
     cy = y + h // 2
-    cv2.circle(frame, (cx, cy), radius, (255, 0, 0), 3)
+
+    # Contorno preto
+    cv2.circle(frame, (cx, cy), radius, (0, 0, 0), 3)
+
+    # Azul suave
+    cv2.circle(frame, (cx, cy), radius, (180, 180, 255), 2)
 
 
 # ============================
@@ -182,26 +207,26 @@ def process_video(model, local_video, original_name):
 
         for box in detections:
             cls = int(box.cls[0])
-            label = model.names[cls]
+            label = model.names[cls].lower()
 
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             w_box = x2 - x1
             h_box = y2 - y1
             cx = x1 + w_box // 2
 
-            if label.lower() == "player":
-                draw_fifa_triangle(frame, cx, y1, (0, 255, 255))
+            if label == "player":
+                draw_fifa_triangle(frame, cx, y1, COLOR_PLAYER)
                 draw_label(frame, cx, y1, "Player")
 
-            elif label.lower() == "goalkeeper":
-                draw_fifa_triangle(frame, cx, y1, (0, 128, 255))
+            elif label == "goalkeeper":
+                draw_fifa_triangle(frame, cx, y1, COLOR_GOALKEEPER)
                 draw_label(frame, cx, y1, "Goalkeeper")
 
-            elif label.lower() == "referee":
-                draw_fifa_triangle(frame, cx, y1, (255, 0, 255))
+            elif label == "referee":
+                draw_fifa_triangle(frame, cx, y1, COLOR_REFEREE)
                 draw_label(frame, cx, y1, "Referee")
 
-            elif label.lower() == "ball":
+            elif label == "ball":
                 draw_ball_circle(frame, x1, y1, w_box, h_box)
 
         writer.write(frame)
