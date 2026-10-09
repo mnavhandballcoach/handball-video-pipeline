@@ -137,14 +137,23 @@ def download_video_and_json(key):
     local_video = "input.mp4"
     local_json = "input.json"
 
-    # Download video (must exist)
-    s3.download_file(BUCKET_NAME, key, local_video)
+    # Download video using GET (Backblaze-compatible)
+    try:
+        obj = s3.get_object(Bucket=BUCKET_NAME, Key=key)
+        with open(local_video, "wb") as f:
+            f.write(obj["Body"].read())
+        print("✔ Video downloaded")
+    except Exception as e:
+        print("❌ Failed to download video:", e)
+        raise
 
     # Try JSON (optional)
     json_key = key.replace(".mp4", ".json")
 
     try:
-        s3.download_file(BUCKET_NAME, json_key, local_json)
+        obj = s3.get_object(Bucket=BUCKET_NAME, Key=json_key)
+        with open(local_json, "wb") as f:
+            f.write(obj["Body"].read())
         print("✔ JSON downloaded")
     except Exception:
         print("⚠️ JSON not found, using defaults")
@@ -158,6 +167,7 @@ def download_video_and_json(key):
 
     print("✔ Download complete\n")
     return local_video, local_json
+
 
 
 # ============================
