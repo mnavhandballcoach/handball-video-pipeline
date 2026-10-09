@@ -4,13 +4,16 @@ import shutil
 import boto3
 import requests
 import subprocess
+import numpy as np
 from ultralytics import YOLO
+
 
 print("----")
 print("----")
-print("Process Video - 09102026 - 14:34")
+print("Process Video - FIFA")
 print("----")
 print("----")
+
 
 # ============================
 # CONFIG
@@ -31,7 +34,7 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET
 )
 
-print("USING LATEST VERSION 4")
+print("USING LATEST VERSION 5")
 
 
 # ============================
@@ -107,6 +110,39 @@ def upload_video(local_path, remote_name):
 
 
 # ============================
+# FIFA STYLE DRAWING
+# ============================
+
+def draw_fifa_triangle(frame, x, y, color):
+    pts = np.array([
+        [x, y - 25],
+        [x - 20, y],
+        [x + 20, y]
+    ], np.int32)
+    cv2.fillPoly(frame, [pts], color)
+
+
+def draw_label(frame, x, y, label):
+    cv2.putText(
+        frame,
+        label,
+        (x - 40, y - 35),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA
+    )
+
+
+def draw_ball_circle(frame, x, y, w, h):
+    radius = int(max(w, h) / 2)
+    cx = x + w // 2
+    cy = y + h // 2
+    cv2.circle(frame, (cx, cy), radius, (255, 0, 0), 3)
+
+
+# ============================
 # PROCESS VIDEO (FRAME-BY-FRAME YOLO)
 # ============================
 
@@ -141,13 +177,34 @@ def process_video(model, local_video, original_name):
         if not ret:
             break
 
-        # YOLO inference on frame
         results = model(frame)
+        detections = results[0].boxes
 
-        # Draw detections
-        annotated = results[0].plot()
+        for box in detections:
+            cls = int(box.cls[0])
+            label = model.names[cls]
 
-        writer.write(annotated)
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            w_box = x2 - x1
+            h_box = y2 - y1
+            cx = x1 + w_box // 2
+
+            if label.lower() == "player":
+                draw_fifa_triangle(frame, cx, y1, (0, 255, 255))
+                draw_label(frame, cx, y1, "Player")
+
+            elif label.lower() == "goalkeeper":
+                draw_fifa_triangle(frame, cx, y1, (0, 128, 255))
+                draw_label(frame, cx, y1, "Goalkeeper")
+
+            elif label.lower() == "referee":
+                draw_fifa_triangle(frame, cx, y1, (255, 0, 255))
+                draw_label(frame, cx, y1, "Referee")
+
+            elif label.lower() == "ball":
+                draw_ball_circle(frame, x1, y1, w_box, h_box)
+
+        writer.write(frame)
         frame_count += 1
 
     cap.release()
