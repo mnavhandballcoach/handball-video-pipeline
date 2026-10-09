@@ -6,7 +6,11 @@ import requests
 import subprocess
 from ultralytics import YOLO
 
+print("----")
+print("----")
 print("Process Video - 09102026 - 14:34")
+print("----")
+print("----")
 
 # ============================
 # CONFIG
@@ -27,7 +31,7 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET
 )
 
-print("USING LATEST VERSION 3")
+print("USING LATEST VERSION 4")
 
 
 # ============================
@@ -86,7 +90,6 @@ def convert_video_to_safe_format(input_path):
         "-i", input_path,
         "-movflags", "faststart",
         "-pix_fmt", "yuv420p",
-        "-vf", "scale=576:1024",
         safe_path
     ]
 
@@ -104,61 +107,55 @@ def upload_video(local_path, remote_name):
 
 
 # ============================
-# PROCESS VIDEO (YOLO + BUILD VIDEO)
+# PROCESS VIDEO (FRAME-BY-FRAME YOLO)
 # ============================
 
 def process_video(model, local_video, original_name):
-    print(f"Running YOLO on {local_video}...")
+    print(f"Running YOLO frame-by-frame on {local_video}...")
 
-    # Force YOLO to save frames in a writable directory
-    results = model.predict(
-        local_video,
-        save=True,
-        project="runs",
-        name="predict"
-    )
+    cap = cv2.VideoCapture(local_video)
+    if not cap.isOpened():
+        raise RuntimeError("OpenCV cannot open the video.")
 
-    output_dir = results[0].save_dir
-    print(f"YOLO saved frames to: {output_dir}")
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    # Collect frames
-    frames = sorted([
-        os.path.join(output_dir, f)
-        for f in os.listdir(output_dir)
-        if f.lower().endswith((".jpg", ".png"))
-    ])
-
-    if not frames:
-        raise FileNotFoundError("YOLO did not generate any frames.")
-
-    # Read first frame to get size
-    first = cv2.imread(frames[0])
-    h, w, _ = first.shape
-
-    # Create stable output folder
     stable_dir = "output"
     os.makedirs(stable_dir, exist_ok=True)
 
-    # Build final annotated video name
     base_name = os.path.splitext(original_name)[0]
     output_video = os.path.join(stable_dir, f"{base_name}_annotated.mp4")
 
-    # Build video from frames
     writer = cv2.VideoWriter(
         output_video,
         cv2.VideoWriter_fourcc(*"mp4v"),
-        30,
+        fps if fps > 0 else 30,
         (w, h)
     )
 
-    for frame_path in frames:
-        frame = cv2.imread(frame_path)
-        writer.write(frame)
+    frame_count = 0
 
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # YOLO inference on frame
+        results = model(frame)
+
+        # Draw detections
+        annotated = results[0].plot()
+
+        writer.write(annotated)
+        frame_count += 1
+
+    cap.release()
     writer.release()
 
-    print(f"Final annotated video created: {output_video}")
+    print(f"Annotated video created with {frame_count} frames: {output_video}")
     return output_video
+
 
 # ============================
 # MAIN PIPELINE
@@ -185,25 +182,19 @@ def main():
         local_input = "input.mp4"
         download_video(file_name, local_input)
 
-        # Convert to safe format
         safe_video = convert_video_to_safe_format(local_input)
 
-        # Run YOLO + build annotated video
         output_video = process_video(model, safe_video, original_name)
 
-        # Upload annotated
         annotated_remote = f"processed/{os.path.basename(output_video)}"
         upload_video(output_video, annotated_remote)
 
-        # Upload original
         original_remote = f"processed/originals/{original_name}"
         upload_video(local_input, original_remote)
 
         print(f"Processed and uploaded: {annotated_remote}")
 
-        # Cleanup
         shutil.rmtree("output", ignore_errors=True)
-        shutil.rmtree(os.path.dirname(results[0].save_dir), ignore_errors=True)
         os.remove(local_input)
         os.remove(safe_video)
 
