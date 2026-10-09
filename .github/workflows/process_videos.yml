@@ -25,6 +25,9 @@ jobs:
       run: |
         pip install ultralytics requests boto3 python-dotenv opencv-python
 
+    - name: Install ffmpeg
+      run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
     - name: Run processor
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
