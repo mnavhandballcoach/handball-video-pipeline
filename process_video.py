@@ -12,7 +12,7 @@ from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
 
 print("\n==============================")
-print("   PROCESS VIDEO PIPELINE v6")
+print("   PROCESS VIDEO PIPELINE v7")
 print("==============================\n")
 
 # ============================
@@ -65,7 +65,7 @@ def send_email(user_email, user_name, video_url):
     print(f"📧 Sending email to {user_email}...")
 
     subject = "O seu vídeo anotado está pronto!"
-    body = f"""
+    message = f"""
 Olá {user_name},
 
 O seu vídeo foi processado com sucesso.
@@ -80,7 +80,7 @@ Obrigado por utilizar o nosso serviço!
     msg["From"] = SMTP_USER
     msg["To"] = user_email
     msg["Subject"] = subject
-    msg.attach(MIMEText(body, "plain"))
+    msg.attach(MIMEText(message, "plain"))
 
     try:
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
@@ -108,19 +108,18 @@ def download_model(url, filename):
 
 
 # ============================
-# LIST INCOMING VIDEOS
+# LIST VIDEOS (SEM PREFIXO FIXO)
 # ============================
 
 def list_incoming():
-    print("📂 Listing incoming videos...")
-    resp = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="incoming/")
+    print("📂 Listing videos in bucket...")
+    resp = s3.list_objects_v2(Bucket=BUCKET_NAME)
     files = resp.get("Contents", [])
 
     video_exts = (".mp4", ".mov", ".avi", ".mkv")
-
     videos = [f for f in files if f["Key"].lower().endswith(video_exts)]
 
-    print(f"✔ Found {len(videos)} videos in incoming/\n")
+    print(f"✔ Found {len(videos)} videos\n")
     return files, videos
 
 
@@ -128,16 +127,16 @@ def list_incoming():
 # DOWNLOAD VIDEO + JSON
 # ============================
 
-def download_video_and_json(remote_name):
-    print(f"⬇️ Downloading video + JSON for {remote_name}")
+def download_video_and_json(key):
+    print(f"⬇️ Downloading video + JSON for {key}")
 
     local_video = "input.mp4"
     local_json = "input.json"
 
-    s3.download_file(BUCKET_NAME, remote_name, local_video)
+    s3.download_file(BUCKET_NAME, key, local_video)
 
-    json_name = remote_name.replace(".mp4", ".json")
-    s3.download_file(BUCKET_NAME, json_name, local_json)
+    json_key = key.replace(".mp4", ".json")
+    s3.download_file(BUCKET_NAME, json_key, local_json)
 
     print("✔ Download complete\n")
     return local_video, local_json
@@ -203,13 +202,11 @@ def upload_file(local_path, remote_name):
 # COLORS
 # ============================
 
-# YOLO base colors (when classifier OFF)
 COLOR_PLAYER_YOLO = (180, 80, 80)
 COLOR_GOALKEEPER_YOLO = (120, 220, 120)
 COLOR_REFEREE = (200, 200, 200)
 COLOR_BALL = (255, 255, 0)
 
-# Team colors (when classifier ON)
 COLOR_TEAM_A = (0, 120, 255)
 COLOR_TEAM_A_GK = (0, 180, 255)
 
@@ -257,12 +254,10 @@ def process_video(model, classifier, local_video, original_name):
 
     base_name = os.path.splitext(original_name)[0]
 
-    # Output video
     stable_dir = "output"
     os.makedirs(stable_dir, exist_ok=True)
     output_video = os.path.join(stable_dir, f"{base_name}_annotated.mp4")
 
-    # Frames + labels
     frames_dir = os.path.join("output_frames", base_name)
     labels_dir = "output_labels"
     labels_path = os.path.join(labels_dir, f"{base_name}.txt")
@@ -304,7 +299,6 @@ def process_video(model, classifier, local_video, original_name):
 
             team = None
 
-            # TEAM CLASSIFIER (stable) only if ON
             if USE_TEAM_CLASSIFIER and label in ["player", "goalkeeper"]:
                 crop = frame[y1:y2, x1:x2]
 
@@ -322,26 +316,19 @@ def process_video(model, classifier, local_video, original_name):
 
                 last_team[id(box)] = team
 
-            # DRAWING
             if not USE_TEAM_CLASSIFIER:
-                # YOLO colors only
                 if label == "player":
                     draw_triangle(frame, cx, y1, COLOR_PLAYER_YOLO)
                     draw_label(frame, cx, y1, "Player")
-
                 elif label == "goalkeeper":
                     draw_triangle(frame, cx, y1, COLOR_GOALKEEPER_YOLO)
                     draw_label(frame, cx, y1, "Goalkeeper")
-
                 elif label == "referee":
                     draw_triangle(frame, cx, y1, COLOR_REFEREE)
                     draw_label(frame, cx, y1, "Referee")
-
                 elif label == "ball":
                     draw_ball(frame, x1, y1, w_box, h_box)
-
             else:
-                # Team colors
                 if label == "player":
                     if team == "TeamA":
                         color = COLOR_TEAM_A
@@ -352,7 +339,6 @@ def process_video(model, classifier, local_video, original_name):
                     else:
                         color = COLOR_PLAYER_YOLO
                         text = "Player"
-
                     draw_triangle(frame, cx, y1, color)
                     draw_label(frame, cx, y1, text)
 
@@ -366,7 +352,6 @@ def process_video(model, classifier, local_video, original_name):
                     else:
                         color = COLOR_GOALKEEPER_YOLO
                         text = "Goalkeeper"
-
                     draw_triangle(frame, cx, y1, color)
                     draw_label(frame, cx, y1, text)
 
@@ -377,14 +362,11 @@ def process_video(model, classifier, local_video, original_name):
                 elif label == "ball":
                     draw_ball(frame, x1, y1, w_box, h_box)
 
-            # LABELS
             labels_file.write(
                 f"{frame_name} {label} {team if team else '-'} {x1} {y1} {x2} {y2}\n"
             )
 
-        # Save frame
         cv2.imwrite(frame_path, frame)
-
         writer.write(frame)
         frame_index += 1
 
@@ -422,14 +404,14 @@ def main():
     incoming_keys = [f["Key"] for f in files_all]
 
     for file in files_videos:
-        file_name = file["Key"]
+        key = file["Key"]
         print("\n========================================")
-        print(f"🎬 PROCESSING VIDEO: {file_name}")
+        print(f"🎬 PROCESSING VIDEO: {key}")
         print("========================================\n")
 
-        original_name = os.path.basename(file_name)
+        original_name = os.path.basename(key)
 
-        local_video, local_json = download_video_and_json(file_name)
+        local_video, local_json = download_video_and_json(key)
 
         with open(local_json, "r") as f:
             data = json.load(f)
@@ -456,14 +438,12 @@ def main():
         original_remote = f"processed/originals/{original_name}"
         upload_file(local_video, original_remote)
 
-        # Upload frames
         for root, dirs, files_local in os.walk(frames_dir):
             for f in files_local:
                 local_path = os.path.join(root, f)
                 remote_path = f"processed/frames/{os.path.basename(frames_dir)}/{f}"
                 upload_file(local_path, remote_path)
 
-        # Upload labels
         upload_file(labels_path, f"processed/labels/{os.path.basename(labels_path)}")
 
         video_url = f"https://f003.backblazeb2.com/file/{BUCKET_NAME}/{annotated_remote}"
@@ -479,8 +459,7 @@ def main():
 
         print("✔ Cleanup complete for this video\n")
 
-    # FINAL CLEAN OF INCOMING
-    print("🗑️ Cleaning incoming folder at the end...")
+    print("🗑️ Cleaning bucket at the end...")
 
     for key in incoming_keys:
         try:
@@ -489,7 +468,7 @@ def main():
         except Exception as e:
             print(f"❌ Failed deleting {key}: {e}")
 
-    print("✔ Incoming folder fully cleaned\n")
+    print("✔ Bucket cleaned\n")
     print("🎉 All videos processed.\n")
 
 
