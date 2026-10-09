@@ -5,8 +5,11 @@ import boto3
 import requests
 import subprocess
 import numpy as np
+import json
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
-
 
 print("----")
 print("----")
@@ -26,6 +29,11 @@ S3_ENDPOINT = "https://s3.eu-central-003.backblazeb2.com"
 AWS_KEY = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET = os.getenv("AWS_SECRET_ACCESS_KEY")
 
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASS = os.getenv("SMTP_PASS")
+
 s3 = boto3.client(
     "s3",
     endpoint_url=S3_ENDPOINT,
@@ -33,7 +41,39 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET
 )
 
-print("USING LATEST VERSION 6")
+print("USING LATEST VERSION 9")
+
+
+# ============================
+# EMAIL SENDER
+# ============================
+
+def send_email(user_email, user_name, video_url):
+    subject = "O seu vídeo anotado está pronto!"
+    body = f"""
+Olá {user_name},
+
+O seu vídeo foi processado com sucesso.
+
+Pode descarregar o vídeo anotado aqui:
+{video_url}
+
+Obrigado por utilizar o nosso serviço!
+"""
+
+    msg = MIMEMultipart()
+    msg["From"] = SMTP_USER
+    msg["To"] = user_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    try:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
+            server.login(SMTP_USER, SMTP_PASS)
+            server.sendmail(SMTP_USER, user_email, msg.as_string())
+        print(f"Email enviado para {user_email}")
+    except Exception as e:
+        print("Erro ao enviar email:", e)
 
 
 # ============================
@@ -69,12 +109,39 @@ def list_incoming():
 
 
 # ============================
-# DOWNLOAD VIDEO
+# DOWNLOAD VIDEO + JSON
 # ============================
 
-def download_video(remote_name, local_path):
-    s3.download_file(BUCKET_NAME, remote_name, local_path)
-    return local_path
+def download_video_and_json(remote_name):
+    local_video = "input.mp4"
+    local_json = "input.json"
+
+    s3.download_file(BUCKET_NAME, remote_name, local_video)
+
+    json_name = remote_name.replace(".mp4", ".json")
+    s3.download_file(BUCKET_NAME, json_name, local_json)
+
+    return local_video, local_json
+
+
+# ============================
+# CUT VIDEO
+# ============================
+
+def cut_video(input_path, start_time, duration):
+    output_path = "cut_input.mp4"
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", str(start_time),
+        "-i", input_path,
+        "-t", str(duration),
+        "-c", "copy",
+        output_path
+    ]
+
+    subprocess.run(cmd, check=True)
+    return output_path
 
 
 # ============================
@@ -109,50 +176,38 @@ def upload_video(local_path, remote_name):
 
 
 # ============================
-# FIFA STYLE DRAWING (REFINED)
+# FIFA STYLE DRAWING (NEW COLORS)
 # ============================
 
-COLOR_PLAYER = (200, 230, 255)      # azul pastel
-COLOR_GOALKEEPER = (255, 220, 180)  # laranja pastel
-COLOR_REFEREE = (220, 200, 255)     # roxo pastel
+# Jogadores → vermelho claro (não saturado)
+COLOR_PLAYER = (180, 80, 80)
+
+# Guarda-redes → verde claro
+COLOR_GOALKEEPER = (120, 220, 120)
+
+# Árbitros → cinzento claro
+COLOR_REFEREE = (200, 200, 200)
+
+# Bola → amarelo vivo
+COLOR_BALL = (255, 255, 0)
+
 
 def draw_fifa_triangle(frame, x, y, color):
     pts = np.array([
-        [x, y],            # topo
-        [x - 14, y - 22],  # canto esquerdo
-        [x + 14, y - 22]   # canto direito
+        [x, y],
+        [x - 14, y - 22],
+        [x + 14, y - 22]
     ], np.int32)
 
-    # Contorno preto
     cv2.polylines(frame, [pts], True, (0, 0, 0), 2)
-
-    # Preenchimento suave
     cv2.fillPoly(frame, [pts], color)
 
 
 def draw_label(frame, x, y, label):
-    # Contorno preto
-    cv2.putText(
-        frame,
-        label,
-        (x - 35, y - 30),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.55,
-        (0, 0, 0),
-        3,
-        cv2.LINE_AA
-    )
-    # Texto branco
-    cv2.putText(
-        frame,
-        label,
-        (x - 35, y - 30),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.55,
-        (255, 255, 255),
-        1,
-        cv2.LINE_AA
-    )
+    cv2.putText(frame, label, (x - 35, y - 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3, cv2.LINE_AA)
+    cv2.putText(frame, label, (x - 35, y - 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
 
 
 def draw_ball_circle(frame, x, y, w, h):
@@ -160,11 +215,8 @@ def draw_ball_circle(frame, x, y, w, h):
     cx = x + w // 2
     cy = y + h // 2
 
-    # Contorno preto
     cv2.circle(frame, (cx, cy), radius, (0, 0, 0), 3)
-
-    # Azul suave
-    cv2.circle(frame, (cx, cy), radius, (180, 180, 255), 2)
+    cv2.circle(frame, (cx, cy), radius, COLOR_BALL, 2)
 
 
 # ============================
@@ -261,10 +313,23 @@ def main():
 
         original_name = os.path.basename(file_name)
 
-        local_input = "input.mp4"
-        download_video(file_name, local_input)
+        local_video, local_json = download_video_and_json(file_name)
 
-        safe_video = convert_video_to_safe_format(local_input)
+        with open(local_json, "r") as f:
+            data = json.load(f)
+
+        user_email = data.get("email")
+        user_name = data.get("name")
+        start_time = int(data.get("start", 0))
+        duration = int(data.get("duration", 0))
+
+        if duration > 0:
+            print("Cutting video according to JSON...")
+            cut_path = cut_video(local_video, start_time, duration)
+        else:
+            cut_path = local_video
+
+        safe_video = convert_video_to_safe_format(cut_path)
 
         output_video = process_video(model, safe_video, original_name)
 
@@ -272,16 +337,22 @@ def main():
         upload_video(output_video, annotated_remote)
 
         original_remote = f"processed/originals/{original_name}"
-        upload_video(local_input, original_remote)
+        upload_video(local_video, original_remote)
+
+        video_url = f"https://f003.backblazeb2.com/file/{BUCKET_NAME}/{annotated_remote}"
+
+        send_email(user_email, user_name, video_url)
 
         print(f"Processed and uploaded: {annotated_remote}")
 
         shutil.rmtree("output", ignore_errors=True)
-        os.remove(local_input)
+        os.remove(local_video)
         os.remove(safe_video)
+        os.remove(local_json)
 
     print("\nAll videos processed.")
 
 
 if __name__ == "__main__":
     main()
+
