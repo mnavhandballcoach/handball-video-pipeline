@@ -6,7 +6,7 @@ import requests
 import subprocess
 from ultralytics import YOLO
 
-print("Process Video - 09102026 - 14:20")
+print("Process Video - 09102026 - 14:34")
 
 # ============================
 # CONFIG
@@ -110,8 +110,13 @@ def upload_video(local_path, remote_name):
 def process_video(model, local_video, original_name):
     print(f"Running YOLO on {local_video}...")
 
-    # Run YOLO and save frames
-    results = model.predict(local_video, save=True)
+    # Force YOLO to save frames in a writable directory
+    results = model.predict(
+        local_video,
+        save=True,
+        project="runs",
+        name="predict"
+    )
 
     output_dir = results[0].save_dir
     print(f"YOLO saved frames to: {output_dir}")
@@ -154,7 +159,6 @@ def process_video(model, local_video, original_name):
 
     print(f"Final annotated video created: {output_video}")
     return output_video
-
 
 # ============================
 # MAIN PIPELINE
