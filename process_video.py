@@ -11,11 +11,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
 
-print("----")
-print("----")
-print("Process Video - FIFA v2")
-print("----")
-print("----")
+print("\n==============================")
+print("   PROCESS VIDEO PIPELINE v2")
+print("==============================\n")
 
 # ============================
 # CONFIG
@@ -41,7 +39,12 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET
 )
 
-print("USING LATEST VERSION 9")
+print("✔ S3 client initialized")
+print("✔ Using YOLO model from:", MODEL_URL)
+print("✔ Bucket:", BUCKET_NAME)
+print("✔ Endpoint:", S3_ENDPOINT)
+print("✔ SMTP host:", SMTP_HOST)
+print("\n----------------------------------------\n")
 
 
 # ============================
@@ -49,6 +52,8 @@ print("USING LATEST VERSION 9")
 # ============================
 
 def send_email(user_email, user_name, video_url):
+    print(f"📧 Sending email to {user_email}...")
+
     subject = "O seu vídeo anotado está pronto!"
     body = f"""
 Olá {user_name},
@@ -71,9 +76,9 @@ Obrigado por utilizar o nosso serviço!
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
             server.login(SMTP_USER, SMTP_PASS)
             server.sendmail(SMTP_USER, user_email, msg.as_string())
-        print(f"Email enviado para {user_email}")
+        print("✔ Email enviado\n")
     except Exception as e:
-        print("Erro ao enviar email:", e)
+        print("❌ Erro ao enviar email:", e)
 
 
 # ============================
@@ -81,14 +86,14 @@ Obrigado por utilizar o nosso serviço!
 # ============================
 
 def download_model():
-    print("Downloading YOLO model from GitHub Release...")
+    print("⬇️ Downloading YOLO model...")
     r = requests.get(MODEL_URL)
     r.raise_for_status()
 
     with open("best.pt", "wb") as f:
         f.write(r.content)
 
-    print("Model downloaded successfully.")
+    print("✔ Model downloaded\n")
     return "best.pt"
 
 
@@ -97,15 +102,16 @@ def download_model():
 # ============================
 
 def list_incoming():
+    print("📂 Listing incoming videos...")
     resp = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="incoming/")
     files = resp.get("Contents", [])
 
     video_exts = (".mp4", ".mov", ".avi", ".mkv")
 
-    return [
-        f for f in files
-        if f["Key"].lower().endswith(video_exts)
-    ]
+    videos = [f for f in files if f["Key"].lower().endswith(video_exts)]
+
+    print(f"✔ Found {len(videos)} videos in incoming/\n")
+    return videos
 
 
 # ============================
@@ -113,6 +119,8 @@ def list_incoming():
 # ============================
 
 def download_video_and_json(remote_name):
+    print(f"⬇️ Downloading video + JSON for {remote_name}")
+
     local_video = "input.mp4"
     local_json = "input.json"
 
@@ -121,6 +129,7 @@ def download_video_and_json(remote_name):
     json_name = remote_name.replace(".mp4", ".json")
     s3.download_file(BUCKET_NAME, json_name, local_json)
 
+    print("✔ Download complete\n")
     return local_video, local_json
 
 
@@ -129,6 +138,8 @@ def download_video_and_json(remote_name):
 # ============================
 
 def cut_video(input_path, start_time, duration):
+    print(f"✂️ Cutting video: start={start_time}, duration={duration}")
+
     output_path = "cut_input.mp4"
 
     cmd = [
@@ -141,6 +152,7 @@ def cut_video(input_path, start_time, duration):
     ]
 
     subprocess.run(cmd, check=True)
+    print("✔ Cut complete\n")
     return output_path
 
 
@@ -149,9 +161,9 @@ def cut_video(input_path, start_time, duration):
 # ============================
 
 def convert_video_to_safe_format(input_path):
-    safe_path = "safe_input.mp4"
+    print("🎞 Converting video to safe format...")
 
-    print("Converting video to safe format with FFmpeg...")
+    safe_path = "safe_input.mp4"
 
     cmd = [
         "ffmpeg",
@@ -163,7 +175,7 @@ def convert_video_to_safe_format(input_path):
     ]
 
     subprocess.run(cmd, check=True)
-    print("Safe video created:", safe_path)
+    print("✔ Safe video created:", safe_path, "\n")
     return safe_path
 
 
@@ -172,63 +184,49 @@ def convert_video_to_safe_format(input_path):
 # ============================
 
 def upload_video(local_path, remote_name):
+    print(f"⬆️ Uploading: {remote_name}")
     s3.upload_file(local_path, BUCKET_NAME, remote_name)
+    print("✔ Upload complete\n")
 
 
 # ============================
-# FIFA STYLE DRAWING (NEW COLORS)
+# FIFA STYLE DRAWING
 # ============================
 
-# Jogadores → vermelho claro (não saturado)
 COLOR_PLAYER = (180, 80, 80)
-
-# Guarda-redes → verde claro
 COLOR_GOALKEEPER = (120, 220, 120)
-
-# Árbitros → cinzento claro
 COLOR_REFEREE = (200, 200, 200)
-
-# Bola → amarelo vivo
 COLOR_BALL = (255, 255, 0)
 
-
 def draw_fifa_triangle(frame, x, y, color):
-    pts = np.array([
-        [x, y],
-        [x - 14, y - 22],
-        [x + 14, y - 22]
-    ], np.int32)
-
+    pts = np.array([[x, y], [x - 14, y - 22], [x + 14, y - 22]], np.int32)
     cv2.polylines(frame, [pts], True, (0, 0, 0), 2)
     cv2.fillPoly(frame, [pts], color)
 
-
 def draw_label(frame, x, y, label):
     cv2.putText(frame, label, (x - 35, y - 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3)
     cv2.putText(frame, label, (x - 35, y - 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
-
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
 
 def draw_ball_circle(frame, x, y, w, h):
     radius = int(max(w, h) / 2)
     cx = x + w // 2
     cy = y + h // 2
-
     cv2.circle(frame, (cx, cy), radius, (0, 0, 0), 3)
     cv2.circle(frame, (cx, cy), radius, COLOR_BALL, 2)
 
 
 # ============================
-# PROCESS VIDEO (FRAME-BY-FRAME YOLO)
+# PROCESS VIDEO (YOLO)
 # ============================
 
 def process_video(model, local_video, original_name):
-    print(f"Running YOLO frame-by-frame on {local_video}...")
+    print(f"🔍 Running YOLO on {local_video}...")
 
     cap = cv2.VideoCapture(local_video)
     if not cap.isOpened():
-        raise RuntimeError("OpenCV cannot open the video.")
+        raise RuntimeError("❌ OpenCV cannot open the video.")
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -287,7 +285,7 @@ def process_video(model, local_video, original_name):
     cap.release()
     writer.release()
 
-    print(f"Annotated video created with {frame_count} frames: {output_video}")
+    print(f"✔ Annotated video created ({frame_count} frames): {output_video}\n")
     return output_video
 
 
@@ -296,20 +294,21 @@ def process_video(model, local_video, original_name):
 # ============================
 
 def main():
-    print("Downloading model...")
+    print("🚀 Starting pipeline...\n")
+
     model_path = download_model()
     model = YOLO(model_path)
 
-    print("Listing incoming videos...")
     files = list_incoming()
-
     if not files:
-        print("No videos to process.")
+        print("📭 No videos to process.\n")
         return
 
     for file in files:
         file_name = file["Key"]
-        print(f"\nProcessing: {file_name}")
+        print("\n========================================")
+        print(f"🎬 PROCESSING VIDEO: {file_name}")
+        print("========================================\n")
 
         original_name = os.path.basename(file_name)
 
@@ -324,7 +323,6 @@ def main():
         duration = int(data.get("duration", 0))
 
         if duration > 0:
-            print("Cutting video according to JSON...")
             cut_path = cut_video(local_video, start_time, duration)
         else:
             cut_path = local_video
@@ -343,16 +341,34 @@ def main():
 
         send_email(user_email, user_name, video_url)
 
-        print(f"Processed and uploaded: {annotated_remote}")
+        print("📦 Moving original file out of incoming/...")
+
+        try:
+            copy_source = {"Bucket": BUCKET_NAME, "Key": file_name}
+            processed_original_key = file_name.replace("incoming/", "processed/originals/")
+
+            s3.copy_object(
+                Bucket=BUCKET_NAME,
+                CopySource=copy_source,
+                Key=processed_original_key
+            )
+
+            s3.delete_object(Bucket=BUCKET_NAME, Key=file_name)
+
+            print(f"✔ Original moved to: {processed_original_key}\n")
+
+        except Exception as e:
+            print("❌ Error moving original file:", e)
 
         shutil.rmtree("output", ignore_errors=True)
         os.remove(local_video)
         os.remove(safe_video)
         os.remove(local_json)
 
-    print("\nAll videos processed.")
+        print("✔ Cleanup complete\n")
+
+    print("🎉 All videos processed.\n")
 
 
 if __name__ == "__main__":
     main()
-
