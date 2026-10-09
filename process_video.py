@@ -12,7 +12,7 @@ from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
 
 print("\n==============================")
-print("   PROCESS VIDEO PIPELINE v7")
+print("   PROCESS VIDEO PIPELINE v8")
 print("==============================\n")
 
 # ============================
@@ -108,7 +108,7 @@ def download_model(url, filename):
 
 
 # ============================
-# LIST VIDEOS (SEM PREFIXO FIXO)
+# LIST VIDEOS (PREFIXO CORRIGIDO)
 # ============================
 
 def list_incoming():
@@ -124,18 +124,19 @@ def list_incoming():
 
 
 # ============================
-# DOWNLOAD VIDEO + JSON
+# DOWNLOAD VIDEO + JSON (PREFIXO CORRIGIDO)
 # ============================
 
 def download_video_and_json(key):
-    print(f"⬇️ Downloading video + JSON for {key}")
+    clean_key = key.replace("incoming/", "")
+    print(f"⬇️ Downloading video + JSON for {clean_key}")
 
     local_video = "input.mp4"
     local_json = "input.json"
 
-    s3.download_file(BUCKET_NAME, key, local_video)
+    s3.download_file(BUCKET_NAME, clean_key, local_video)
 
-    json_key = key.replace(".mp4", ".json")
+    json_key = clean_key.replace(".mp4", ".json")
     s3.download_file(BUCKET_NAME, json_key, local_json)
 
     print("✔ Download complete\n")
@@ -166,7 +167,7 @@ def cut_video(input_path, start_time, duration):
 
 
 # ============================
-# FFmpeg SAFE CONVERSION
+# SAFE CONVERSION
 # ============================
 
 def convert_video_to_safe_format(input_path):
@@ -404,7 +405,7 @@ def main():
     incoming_keys = [f["Key"] for f in files_all]
 
     for file in files_videos:
-        key = file["Key"]
+        key = file["Key"].replace("incoming/", "")
         print("\n========================================")
         print(f"🎬 PROCESSING VIDEO: {key}")
         print("========================================\n")
@@ -462,11 +463,12 @@ def main():
     print("🗑️ Cleaning bucket at the end...")
 
     for key in incoming_keys:
+        clean_key = key.replace("incoming/", "")
         try:
-            print(f"Deleting: {key}")
-            s3.delete_object(Bucket=BUCKET_NAME, Key=key)
+            print(f"Deleting: {clean_key}")
+            s3.delete_object(Bucket=BUCKET_NAME, Key=clean_key)
         except Exception as e:
-            print(f"❌ Failed deleting {key}: {e}")
+            print(f"❌ Failed deleting {clean_key}: {e}")
 
     print("✔ Bucket cleaned\n")
     print("🎉 All videos processed.\n")
