@@ -12,7 +12,7 @@ from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
 
 print("\n==============================")
-print("   PROCESS VIDEO PIPELINE v8")
+print("   PROCESS VIDEO PIPELINE v9")
 print("==============================\n")
 
 # ============================
@@ -62,11 +62,15 @@ print("\n----------------------------------------\n")
 # ============================
 
 def send_email(user_email, user_name, video_url):
+    if not user_email:
+        print("⚠️ No email provided, skipping email notification.")
+        return
+
     print(f"📧 Sending email to {user_email}...")
 
     subject = "O seu vídeo anotado está pronto!"
     message = f"""
-Olá {user_name},
+Olá {user_name or "Utilizador"},
 
 O seu vídeo foi processado com sucesso.
 
@@ -108,7 +112,7 @@ def download_model(url, filename):
 
 
 # ============================
-# LIST VIDEOS (PREFIXO CORRIGIDO)
+# LIST VIDEOS (prefixo incoming real)
 # ============================
 
 def list_incoming():
@@ -124,20 +128,33 @@ def list_incoming():
 
 
 # ============================
-# DOWNLOAD VIDEO + JSON (PREFIXO CORRIGIDO)
+# DOWNLOAD VIDEO + JSON (JSON opcional)
 # ============================
 
 def download_video_and_json(key):
-    clean_key = key.replace("incoming/", "")
-    print(f"⬇️ Downloading video + JSON for {clean_key}")
+    print(f"⬇️ Downloading video + JSON for {key}")
 
     local_video = "input.mp4"
     local_json = "input.json"
 
-    s3.download_file(BUCKET_NAME, clean_key, local_video)
+    # Download video (must exist)
+    s3.download_file(BUCKET_NAME, key, local_video)
 
-    json_key = clean_key.replace(".mp4", ".json")
-    s3.download_file(BUCKET_NAME, json_key, local_json)
+    # Try JSON (optional)
+    json_key = key.replace(".mp4", ".json")
+
+    try:
+        s3.download_file(BUCKET_NAME, json_key, local_json)
+        print("✔ JSON downloaded")
+    except Exception:
+        print("⚠️ JSON not found, using defaults")
+        with open(local_json, "w") as f:
+            json.dump({
+                "email": None,
+                "name": None,
+                "start": 0,
+                "duration": 0
+            }, f)
 
     print("✔ Download complete\n")
     return local_video, local_json
@@ -405,7 +422,7 @@ def main():
     incoming_keys = [f["Key"] for f in files_all]
 
     for file in files_videos:
-        key = file["Key"].replace("incoming/", "")
+        key = file["Key"]  # prefix incoming/ preserved
         print("\n========================================")
         print(f"🎬 PROCESSING VIDEO: {key}")
         print("========================================\n")
@@ -463,12 +480,11 @@ def main():
     print("🗑️ Cleaning bucket at the end...")
 
     for key in incoming_keys:
-        clean_key = key.replace("incoming/", "")
         try:
-            print(f"Deleting: {clean_key}")
-            s3.delete_object(Bucket=BUCKET_NAME, Key=clean_key)
+            print(f"Deleting: {key}")
+            s3.delete_object(Bucket=BUCKET_NAME, Key=key)
         except Exception as e:
-            print(f"❌ Failed deleting {clean_key}: {e}")
+            print(f"❌ Failed deleting {key}: {e}")
 
     print("✔ Bucket cleaned\n")
     print("🎉 All videos processed.\n")
