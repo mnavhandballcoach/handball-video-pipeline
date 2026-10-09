@@ -12,7 +12,7 @@ from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
 
 print("\n==============================")
-print("   PROCESS VIDEO PIPELINE v2")
+print("   PROCESS VIDEO PIPELINE v3")
 print("==============================\n")
 
 # ============================
@@ -345,11 +345,13 @@ def main():
 
         try:
             # Delete original video
+            print(f"Attempting delete: {file_name}")
             s3.delete_object(Bucket=BUCKET_NAME, Key=file_name)
             print(f"✔ Deleted original video: {file_name}")
 
             # Delete JSON
             json_key = file_name.replace(".mp4", ".json")
+            print(f"Attempting delete: {json_key}")
             s3.delete_object(Bucket=BUCKET_NAME, Key=json_key)
             print(f"✔ Deleted JSON: {json_key}")
 
