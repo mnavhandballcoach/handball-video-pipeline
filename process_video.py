@@ -12,8 +12,14 @@ from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
 
 print("\n==============================")
-print("   PROCESS VIDEO PIPELINE v5")
+print("   PROCESS VIDEO PIPELINE v6")
 print("==============================\n")
+
+# ============================
+# SWITCHES
+# ============================
+
+USE_TEAM_CLASSIFIER = True  # True = ON, False = OFF
 
 # ============================
 # CONFIG
@@ -42,7 +48,10 @@ s3 = boto3.client(
 
 print("✔ S3 client initialized")
 print("✔ Using YOLO model:", MODEL_URL)
-print("✔ Using TeamClassifier:", CLASSIFIER_URL)
+if USE_TEAM_CLASSIFIER:
+    print("✔ Using TeamClassifier:", CLASSIFIER_URL)
+else:
+    print("✖ TeamClassifier OFF (using YOLO colors only)")
 print("✔ Bucket:", BUCKET_NAME)
 print("✔ Endpoint:", S3_ENDPOINT)
 print("\n----------------------------------------\n")
@@ -112,7 +121,7 @@ def list_incoming():
     videos = [f for f in files if f["Key"].lower().endswith(video_exts)]
 
     print(f"✔ Found {len(videos)} videos in incoming/\n")
-    return videos
+    return files, videos
 
 
 # ============================
@@ -181,10 +190,10 @@ def convert_video_to_safe_format(input_path):
 
 
 # ============================
-# UPLOAD VIDEO
+# UPLOAD FILE
 # ============================
 
-def upload_video(local_path, remote_name):
+def upload_file(local_path, remote_name):
     print(f"⬆️ Uploading: {remote_name}")
     s3.upload_file(local_path, BUCKET_NAME, remote_name)
     print("✔ Upload complete\n")
@@ -194,14 +203,18 @@ def upload_video(local_path, remote_name):
 # COLORS
 # ============================
 
+# YOLO base colors (when classifier OFF)
+COLOR_PLAYER_YOLO = (180, 80, 80)
+COLOR_GOALKEEPER_YOLO = (120, 220, 120)
+COLOR_REFEREE = (200, 200, 200)
+COLOR_BALL = (255, 255, 0)
+
+# Team colors (when classifier ON)
 COLOR_TEAM_A = (0, 120, 255)
 COLOR_TEAM_A_GK = (0, 180, 255)
 
 COLOR_TEAM_B = (255, 80, 80)
 COLOR_TEAM_B_GK = (255, 140, 140)
-
-COLOR_REFEREE = (200, 200, 200)
-COLOR_BALL = (255, 255, 0)
 
 
 # ============================
@@ -232,7 +245,7 @@ def draw_ball(frame, x, y, w, h):
 # ============================
 
 def process_video(model, classifier, local_video, original_name):
-    print(f"🔍 Running YOLO + TeamClassifier on {local_video}...")
+    print(f"🔍 Running YOLO on {local_video}...")
 
     cap = cv2.VideoCapture(local_video)
     if not cap.isOpened():
@@ -251,10 +264,11 @@ def process_video(model, classifier, local_video, original_name):
 
     # Frames + labels
     frames_dir = os.path.join("output_frames", base_name)
-    labels_path = os.path.join("output_labels", f"{base_name}.txt")
+    labels_dir = "output_labels"
+    labels_path = os.path.join(labels_dir, f"{base_name}.txt")
 
     os.makedirs(frames_dir, exist_ok=True)
-    os.makedirs("output_labels", exist_ok=True)
+    os.makedirs(labels_dir, exist_ok=True)
 
     labels_file = open(labels_path, "w")
 
@@ -266,6 +280,7 @@ def process_video(model, classifier, local_video, original_name):
     )
 
     frame_index = 0
+    last_team = {}
 
     while True:
         ret, frame = cap.read()
@@ -287,33 +302,80 @@ def process_video(model, classifier, local_video, original_name):
             h_box = y2 - y1
             cx = x1 + w_box // 2
 
-            # TEAM CLASSIFICATION
             team = None
 
-            if label in ["player", "goalkeeper"]:
+            # TEAM CLASSIFIER (stable) only if ON
+            if USE_TEAM_CLASSIFIER and label in ["player", "goalkeeper"]:
                 crop = frame[y1:y2, x1:x2]
-                if crop.size > 0:
-                    team_result = classifier.predict(crop, verbose=False)
-                    team_cls = int(team_result[0].probs.top1)
-                    team = "TeamA" if team_cls == 0 else "TeamB"
 
-            # DRAW
-            if label == "player":
-                color = COLOR_TEAM_A if team == "TeamA" else COLOR_TEAM_B
-                draw_triangle(frame, cx, y1, color)
-                draw_label(frame, cx, y1, f"{team} Player")
+                if crop.shape[0] >= 40 and crop.shape[1] >= 20:
+                    result = classifier.predict(crop, verbose=False)
+                    conf = float(result[0].probs.top1conf)
+                    cls_team = int(result[0].probs.top1)
 
-            elif label == "goalkeeper":
-                color = COLOR_TEAM_A_GK if team == "TeamA" else COLOR_TEAM_B_GK
-                draw_triangle(frame, cx, y1, color)
-                draw_label(frame, cx, y1, f"{team} GK")
+                    if conf >= 0.60:
+                        team = "TeamA" if cls_team == 0 else "TeamB"
+                    else:
+                        team = last_team.get(id(box), None)
+                else:
+                    team = last_team.get(id(box), None)
 
-            elif label == "referee":
-                draw_triangle(frame, cx, y1, COLOR_REFEREE)
-                draw_label(frame, cx, y1, "Referee")
+                last_team[id(box)] = team
 
-            elif label == "ball":
-                draw_ball(frame, x1, y1, w_box, h_box)
+            # DRAWING
+            if not USE_TEAM_CLASSIFIER:
+                # YOLO colors only
+                if label == "player":
+                    draw_triangle(frame, cx, y1, COLOR_PLAYER_YOLO)
+                    draw_label(frame, cx, y1, "Player")
+
+                elif label == "goalkeeper":
+                    draw_triangle(frame, cx, y1, COLOR_GOALKEEPER_YOLO)
+                    draw_label(frame, cx, y1, "Goalkeeper")
+
+                elif label == "referee":
+                    draw_triangle(frame, cx, y1, COLOR_REFEREE)
+                    draw_label(frame, cx, y1, "Referee")
+
+                elif label == "ball":
+                    draw_ball(frame, x1, y1, w_box, h_box)
+
+            else:
+                # Team colors
+                if label == "player":
+                    if team == "TeamA":
+                        color = COLOR_TEAM_A
+                        text = "Team A Player"
+                    elif team == "TeamB":
+                        color = COLOR_TEAM_B
+                        text = "Team B Player"
+                    else:
+                        color = COLOR_PLAYER_YOLO
+                        text = "Player"
+
+                    draw_triangle(frame, cx, y1, color)
+                    draw_label(frame, cx, y1, text)
+
+                elif label == "goalkeeper":
+                    if team == "TeamA":
+                        color = COLOR_TEAM_A_GK
+                        text = "Team A GK"
+                    elif team == "TeamB":
+                        color = COLOR_TEAM_B_GK
+                        text = "Team B GK"
+                    else:
+                        color = COLOR_GOALKEEPER_YOLO
+                        text = "Goalkeeper"
+
+                    draw_triangle(frame, cx, y1, color)
+                    draw_label(frame, cx, y1, text)
+
+                elif label == "referee":
+                    draw_triangle(frame, cx, y1, COLOR_REFEREE)
+                    draw_label(frame, cx, y1, "Referee")
+
+                elif label == "ball":
+                    draw_ball(frame, x1, y1, w_box, h_box)
 
             # LABELS
             labels_file.write(
@@ -345,17 +407,21 @@ def main():
     print("🚀 Starting pipeline...\n")
 
     model_path = download_model(MODEL_URL, "best.pt")
-    classifier_path = download_model(CLASSIFIER_URL, "bestclassifier.pt")
-
     model = YOLO(model_path)
-    classifier = YOLO(classifier_path)
 
-    files = list_incoming()
-    if not files:
+    classifier = None
+    if USE_TEAM_CLASSIFIER:
+        classifier_path = download_model(CLASSIFIER_URL, "bestclassifier.pt")
+        classifier = YOLO(classifier_path)
+
+    files_all, files_videos = list_incoming()
+    if not files_videos:
         print("📭 No videos to process.\n")
         return
 
-    for file in files:
+    incoming_keys = [f["Key"] for f in files_all]
+
+    for file in files_videos:
         file_name = file["Key"]
         print("\n========================================")
         print(f"🎬 PROCESSING VIDEO: {file_name}")
@@ -380,48 +446,29 @@ def main():
 
         safe_video = convert_video_to_safe_format(cut_path)
 
-        # PROCESS
         output_video, frames_dir, labels_path = process_video(
             model, classifier, safe_video, original_name
         )
 
-        # DELETE BEFORE UPLOAD
-        print("🗑️ Deleting incoming files BEFORE upload...")
-
-        try:
-            print(f"Deleting video: {file_name}")
-            s3.delete_object(Bucket=BUCKET_NAME, Key=file_name)
-
-            json_key = file_name.replace(".mp4", ".json")
-            print(f"Deleting JSON: {json_key}")
-            s3.delete_object(Bucket=BUCKET_NAME, Key=json_key)
-
-            print("✔ Incoming cleaned successfully")
-
-        except Exception as e:
-            print("❌ Error deleting incoming files:", e)
-
-        # UPLOAD
         annotated_remote = f"processed/{os.path.basename(output_video)}"
-        upload_video(output_video, annotated_remote)
+        upload_file(output_video, annotated_remote)
 
         original_remote = f"processed/originals/{original_name}"
-        upload_video(local_video, original_remote)
+        upload_file(local_video, original_remote)
 
-        # Upload frames + labels
+        # Upload frames
         for root, dirs, files_local in os.walk(frames_dir):
             for f in files_local:
                 local_path = os.path.join(root, f)
                 remote_path = f"processed/frames/{os.path.basename(frames_dir)}/{f}"
-                upload_video(local_path, remote_path)
+                upload_file(local_path, remote_path)
 
-        upload_video(labels_path, f"processed/labels/{os.path.basename(labels_path)}")
+        # Upload labels
+        upload_file(labels_path, f"processed/labels/{os.path.basename(labels_path)}")
 
-        # EMAIL
         video_url = f"https://f003.backblazeb2.com/file/{BUCKET_NAME}/{annotated_remote}"
         send_email(user_email, user_name, video_url)
 
-        # CLEAN LOCAL
         shutil.rmtree("output", ignore_errors=True)
         shutil.rmtree("output_frames", ignore_errors=True)
         shutil.rmtree("output_labels", ignore_errors=True)
@@ -430,8 +477,19 @@ def main():
         os.remove(safe_video)
         os.remove(local_json)
 
-        print("✔ Cleanup complete\n")
+        print("✔ Cleanup complete for this video\n")
 
+    # FINAL CLEAN OF INCOMING
+    print("🗑️ Cleaning incoming folder at the end...")
+
+    for key in incoming_keys:
+        try:
+            print(f"Deleting: {key}")
+            s3.delete_object(Bucket=BUCKET_NAME, Key=key)
+        except Exception as e:
+            print(f"❌ Failed deleting {key}: {e}")
+
+    print("✔ Incoming folder fully cleaned\n")
     print("🎉 All videos processed.\n")
 
 
