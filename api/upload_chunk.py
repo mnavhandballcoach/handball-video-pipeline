@@ -57,6 +57,7 @@ async def finish_upload(filename: str, finish: int = 0):
 
     print(f"✔ Vídeo reconstruído: {final_path}")
 
+    # Metadata JSON
     json_data = {
         "email": "",
         "name": "",
