@@ -4,31 +4,36 @@
   <meta charset="UTF-8">
   <title>Upload de Vídeo de Handball</title>
   <style>
-    body { font-family: Arial; max-width: 500px; margin: 40px auto; }
+    body { font-family: Arial, sans-serif; max-width: 500px; margin: 40px auto; }
+    label { font-weight: bold; margin-top: 15px; display: block; }
+    input, button { width: 100%; padding: 8px; margin-top: 5px; }
+    button { margin-top: 20px; background-color: #0078ff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background-color: #005fcc; }
     #progress-container { margin-top: 20px; display: none; }
-    #progress-bar { width: 0%; height: 20px; background-color: #0078ff; }
+    #progress-bar { width: 0%; height: 20px; background-color: #0078ff; border-radius: 4px; }
     #status { margin-top: 10px; font-weight: bold; }
   </style>
 </head>
 <body>
 
 <h2>Upload de Vídeo de Handball</h2>
+<p>Envie o seu vídeo para ser analisado automaticamente.</p>
 
 <form id="uploadForm">
-  <label>Vídeo (.mp4)</label>
+  <label for="file">Vídeo (.mp4)</label>
   <input type="file" id="file" name="file" accept="video/mp4" required>
 
-  <label>O seu nome</label>
-  <input type="text" id="user_name" required>
+  <label for="user_name">O seu nome</label>
+  <input type="text" id="user_name" name="user_name" required>
 
-  <label>O seu email</label>
-  <input type="email" id="user_email" required>
+  <label for="user_email">O seu email</label>
+  <input type="email" id="user_email" name="user_email" required>
 
-  <label>Início (segundos)</label>
-  <input type="number" id="start_time" min="0">
+  <label for="start_time">Início (segundos)</label>
+  <input type="number" id="start_time" name="start_time" min="0">
 
-  <label>Duração (segundos)</label>
-  <input type="number" id="duration" min="1">
+  <label for="duration">Duração (segundos)</label>
+  <input type="number" id="duration" name="duration" min="1">
 
   <button type="submit">Enviar vídeo</button>
 </form>
@@ -57,7 +62,14 @@ form.addEventListener("submit", async function(event) {
   const start = document.getElementById("start_time").value;
   const duration = document.getElementById("duration").value;
 
+  if (!file) {
+    alert("Selecione um vídeo.");
+    return;
+  }
+
   progressContainer.style.display = "block";
+  progressBar.style.width = "0%";
+  progressBar.style.backgroundColor = "#0078ff";
   status.innerHTML = "A enviar vídeo...";
 
   let startByte = 0;
@@ -76,20 +88,49 @@ form.addEventListener("submit", async function(event) {
     formData.append("start_time", start);
     formData.append("duration", duration);
 
-    await fetch(UPLOAD_URL, { method: "POST", body: formData });
+    status.innerHTML = `A enviar parte ${index + 1} de ${totalChunks}...`;
+
+    const res = await fetch(UPLOAD_URL, {
+      method: "POST",
+      body: formData
+    });
+
+    if (!res.ok) {
+      status.innerHTML = "❌ Erro de rede ao enviar o vídeo.";
+      progressBar.style.backgroundColor = "#ff4444";
+      return;
+    }
 
     startByte += CHUNK_SIZE;
     index++;
 
-    progressBar.style.width = ((startByte / file.size) * 100) + "%";
+    const percent = Math.min(100, (startByte / file.size) * 100);
+    progressBar.style.width = percent + "%";
   }
 
   status.innerHTML = "A finalizar upload...";
 
-  await fetch(`${UPLOAD_URL}?finish=1&filename=${file.name}`);
+  const finishData = new FormData();
+  finishData.append("finish", 1);
+  finishData.append("filename", file.name);
+  finishData.append("user_name", name);
+  finishData.append("user_email", email);
+  finishData.append("start_time", start);
+  finishData.append("duration", duration);
+
+  const finishRes = await fetch(UPLOAD_URL, {
+    method: "POST",
+    body: finishData
+  });
+
+  if (!finishRes.ok) {
+    status.innerHTML = "❌ Erro ao finalizar o upload.";
+    progressBar.style.backgroundColor = "#ff4444";
+    return;
+  }
 
   progressBar.style.backgroundColor = "#00c851";
-  status.innerHTML = "✔ Vídeo enviado com sucesso!";
+  status.innerHTML = "✔ Vídeo enviado com sucesso! Irá receber o resultado por email.";
 });
 </script>
 
