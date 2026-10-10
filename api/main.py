@@ -1,25 +1,37 @@
-from fastapi import FastAPI, UploadFile, Form, Request
+from fastapi import FastAPI, UploadFile, Form
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 import os
-import subprocess
 import json
+import subprocess
 import boto3
 
 app = FastAPI()
 
-# ============================
-# CONFIG
-# ============================
+# === CORS ===
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-UPLOAD_DIR = "/tmp/chunks"
-FINAL_DIR = "/tmp/final"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(FINAL_DIR, exist_ok=True)
+# === Servir HTML ===
+static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-BUCKET_NAME = "handball-videos"
-S3_ENDPOINT = "https://s3.eu-central-003.backblazeb2.com"
+@app.get("/", response_class=HTMLResponse)
+def upload_page():
+    return open(os.path.join(static_dir, "upload.html"), "r", encoding="utf-8").read()
 
-AWS_KEY = os.getenv("AWS_ACCESS_KEY_ID")
-AWS_SECRET = os.getenv("AWS_SECRET_ACCESS_KEY")
+# === Backblaze B2 (via boto3 S3 API) ===
+BUCKET_NAME = os.getenv("B2_BUCKET_NAME")
+S3_ENDPOINT = os.getenv("B2_ENDPOINT")
+
+AWS_KEY = os.getenv("B2_KEY_ID")
+AWS_SECRET = os.getenv("B2_APP_KEY")
 
 s3 = boto3.client(
     "s3",
@@ -28,10 +40,12 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET
 )
 
-# ============================
-# UPLOAD CHUNK
-# ============================
+UPLOAD_DIR = "/tmp/chunks"
+FINAL_DIR = "/tmp/final"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(FINAL_DIR, exist_ok=True)
 
+# === UPLOAD CHUNK ===
 @app.post("/upload_chunk")
 async def upload_chunk(
     chunk: UploadFile = None,
@@ -44,10 +58,7 @@ async def upload_chunk(
     finish: int = None
 ):
 
-    # ============================
-    # 1) FINALIZAÇÃO → juntar chunks
-    # ============================
-
+    # === FINALIZAÇÃO ===
     if finish == 1:
         final_path = f"{FINAL_DIR}/{filename}"
 
@@ -62,10 +73,7 @@ async def upload_chunk(
                 os.remove(part)
                 i += 1
 
-        # ============================
-        # 2) Criar JSON com metadata
-        # ============================
-
+        # === JSON METADATA ===
         json_path = f"{FINAL_DIR}/{filename.replace('.mp4', '.json')}"
         metadata = {
             "email": user_email,
@@ -77,32 +85,19 @@ async def upload_chunk(
         with open(json_path, "w") as f:
             json.dump(metadata, f)
 
-        # ============================
-        # 3) Upload para Backblaze
-        # ============================
-
+        # === UPLOAD PARA BACKBLAZE ===
         remote_video = f"incoming/{filename}"
         remote_json = f"incoming/{filename.replace('.mp4', '.json')}"
 
         s3.upload_file(final_path, BUCKET_NAME, remote_video)
         s3.upload_file(json_path, BUCKET_NAME, remote_json)
 
-        # ============================
-        # 4) Chamar pipeline
-        # ============================
-
+        # === CHAMAR PIPELINE ===
         subprocess.Popen(["python3", "process_video.py"])
 
-        return {
-            "status": "completed",
-            "video": remote_video,
-            "json": remote_json
-        }
+        return {"status": "completed", "video": remote_video}
 
-    # ============================
-    # 5) RECEBER CHUNK NORMAL
-    # ============================
-
+    # === RECEBER CHUNK ===
     part_path = f"{UPLOAD_DIR}/{filename}.part{index}"
 
     with open(part_path, "wb") as f:
