@@ -12,18 +12,10 @@ from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
 
 print("\n==============================")
-print("   PROCESS VIDEO PIPELINE v9")
+print("   PROCESS VIDEO PIPELINE v10")
 print("==============================\n")
 
-# ============================
-# SWITCHES
-# ============================
-
-USE_TEAM_CLASSIFIER = False  # True = ON, False = OFF
-
-# ============================
-# CONFIG
-# ============================
+USE_TEAM_CLASSIFIER = False
 
 MODEL_URL = "https://github.com/mnavhandballcoach/handball-video-pipeline/releases/download/model/best.pt"
 CLASSIFIER_URL = "https://github.com/mnavhandballcoach/handball-video-pipeline/releases/download/model/bestclassifier.pt"
@@ -46,27 +38,9 @@ s3 = boto3.client(
     aws_secret_access_key=AWS_SECRET
 )
 
-print("✔ S3 client initialized")
-print("✔ Using YOLO model:", MODEL_URL)
-if USE_TEAM_CLASSIFIER:
-    print("✔ Using TeamClassifier:", CLASSIFIER_URL)
-else:
-    print("✖ TeamClassifier OFF (using YOLO colors only)")
-print("✔ Bucket:", BUCKET_NAME)
-print("✔ Endpoint:", S3_ENDPOINT)
-print("\n----------------------------------------\n")
-
-
-# ============================
-# EMAIL SENDER
-# ============================
-
 def send_email(user_email, user_name, video_url):
     if not user_email:
-        print("⚠️ No email provided, skipping email notification.")
         return
-
-    print(f"📧 Sending email to {user_email}...")
 
     subject = "O seu vídeo anotado está pronto!"
     message = f"""
@@ -90,61 +64,33 @@ Obrigado por utilizar o nosso serviço!
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
             server.login(SMTP_USER, SMTP_PASS)
             server.sendmail(SMTP_USER, user_email, msg.as_string())
-        print("✔ Email enviado\n")
     except Exception as e:
         print("❌ Erro ao enviar email:", e)
 
 
-# ============================
-# DOWNLOAD MODELS
-# ============================
-
 def download_model(url, filename):
-    print(f"⬇️ Downloading model: {filename}")
     r = requests.get(url)
     r.raise_for_status()
-
     with open(filename, "wb") as f:
         f.write(r.content)
-
-    print(f"✔ Model downloaded: {filename}\n")
     return filename
 
 
-# ============================
-# LIST VIDEOS (APENAS incoming/)
-# ============================
-
 def list_incoming():
-    print("📂 Listing videos in bucket (incoming/)...")
     resp = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="incoming/")
     files = resp.get("Contents", [])
-
     video_exts = (".mp4", ".mov", ".avi", ".mkv")
     videos = [f for f in files if f["Key"].lower().endswith(video_exts)]
-
-    print(f"✔ Found {len(videos)} videos in incoming/\n")
     return files, videos
 
 
-# ============================
-# DOWNLOAD VIDEO + JSON (JSON opcional)
-# ============================
-
 def download_video_and_json(key):
-    print(f"⬇️ Downloading video + JSON for {key}")
-
     local_video = "input.mp4"
     local_json = "input.json"
 
-    try:
-        obj = s3.get_object(Bucket=BUCKET_NAME, Key=key)
-        with open(local_video, "wb") as f:
-            f.write(obj["Body"].read())
-        print("✔ Video downloaded")
-    except Exception as e:
-        print("❌ Failed to download video:", e)
-        raise
+    obj = s3.get_object(Bucket=BUCKET_NAME, Key=key)
+    with open(local_video, "wb") as f:
+        f.write(obj["Body"].read())
 
     json_key = key.replace(".mp4", ".json")
 
@@ -152,127 +98,33 @@ def download_video_and_json(key):
         obj = s3.get_object(Bucket=BUCKET_NAME, Key=json_key)
         with open(local_json, "wb") as f:
             f.write(obj["Body"].read())
-        print("✔ JSON downloaded")
     except Exception:
-        print("⚠️ JSON not found, using defaults")
         with open(local_json, "w") as f:
-            json.dump({
-                "email": None,
-                "name": None,
-                "start": 0,
-                "duration": 0
-            }, f)
+            json.dump({"email": None, "name": None, "start": 0, "duration": 0}, f)
 
-    print("✔ Download complete\n")
     return local_video, local_json
 
 
-# ============================
-# CUT VIDEO
-# ============================
-
 def cut_video(input_path, start_time, duration):
-    print(f"✂️ Cutting video: start={start_time}, duration={duration}")
-
     output_path = "cut_input.mp4"
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", str(start_time),
-        "-i", input_path,
-        "-t", str(duration),
-        "-c", "copy",
-        output_path
-    ]
-
+    cmd = ["ffmpeg", "-y", "-ss", str(start_time), "-i", input_path, "-t", str(duration), "-c", "copy", output_path]
     subprocess.run(cmd, check=True)
-    print("✔ Cut complete\n")
     return output_path
 
 
-# ============================
-# SAFE CONVERSION
-# ============================
-
 def convert_video_to_safe_format(input_path):
-    print("🎞 Converting video to safe format...")
-
     safe_path = "safe_input.mp4"
-
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i", input_path,
-        "-movflags", "faststart",
-        "-pix_fmt", "yuv420p",
-        safe_path
-    ]
-
+    cmd = ["ffmpeg", "-y", "-i", input_path, "-movflags", "faststart", "-pix_fmt", "yuv420p", safe_path]
     subprocess.run(cmd, check=True)
-    print("✔ Safe video created:", safe_path, "\n")
     return safe_path
 
 
-# ============================
-# UPLOAD FILE
-# ============================
-
 def upload_file(local_path, remote_name):
-    print(f"⬆️ Uploading: {remote_name}")
     s3.upload_file(local_path, BUCKET_NAME, remote_name)
-    print("✔ Upload complete\n")
 
-
-# ============================
-# COLORS
-# ============================
-
-COLOR_PLAYER_YOLO = (180, 80, 80)
-COLOR_GOALKEEPER_YOLO = (120, 220, 120)
-COLOR_REFEREE = (200, 200, 200)
-COLOR_BALL = (255, 255, 0)
-
-COLOR_TEAM_A = (0, 120, 255)
-COLOR_TEAM_A_GK = (0, 180, 255)
-
-COLOR_TEAM_B = (255, 80, 80)
-COLOR_TEAM_B_GK = (255, 140, 140)
-
-
-# ============================
-# DRAWING FUNCTIONS
-# ============================
-
-def draw_triangle(frame, x, y, color):
-    pts = np.array([[x, y], [x - 14, y - 22], [x + 14, y - 22]], np.int32)
-    cv2.polylines(frame, [pts], True, (0, 0, 0), 2)
-    cv2.fillPoly(frame, [pts], color)
-
-def draw_label(frame, x, y, label):
-    cv2.putText(frame, label, (x - 35, y - 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3)
-    cv2.putText(frame, label, (x - 35, y - 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
-
-def draw_ball(frame, x, y, w, h):
-    radius = int(max(w, h) / 2)
-    cx = x + w // 2
-    cy = y + h // 2
-    cv2.circle(frame, (cx, cy), radius, (0, 0, 0), 3)
-    cv2.circle(frame, (cx, cy), radius, COLOR_BALL, 2)
-
-
-# ============================
-# PROCESS VIDEO
-# ============================
 
 def process_video(model, classifier, local_video, original_name):
-    print(f"🔍 Running YOLO on {local_video}...")
-
     cap = cv2.VideoCapture(local_video)
-    if not cap.isOpened():
-        raise RuntimeError("❌ OpenCV cannot open the video.")
-
     fps = cap.get(cv2.CAP_PROP_FPS)
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -292,15 +144,9 @@ def process_video(model, classifier, local_video, original_name):
 
     labels_file = open(labels_path, "w")
 
-    writer = cv2.VideoWriter(
-        output_video,
-        cv2.VideoWriter_fourcc(*"mp4v"),
-        fps if fps > 0 else 30,
-        (w, h)
-    )
+    writer = cv2.VideoWriter(output_video, cv2.VideoWriter_fourcc(*"mp4v"), fps if fps > 0 else 30, (w, h))
 
     frame_index = 0
-    last_team = {}
 
     while True:
         ret, frame = cap.read()
@@ -316,80 +162,8 @@ def process_video(model, classifier, local_video, original_name):
         for box in detections:
             cls = int(box.cls[0])
             label = model.names[cls].lower()
-
             x1, y1, x2, y2 = map(int, box.xyxy[0])
-            w_box = x2 - x1
-            h_box = y2 - y1
-            cx = x1 + w_box // 2
-
-            team = None
-
-            if USE_TEAM_CLASSIFIER and label in ["player", "goalkeeper"]:
-                crop = frame[y1:y2, x1:x2]
-
-                if crop.shape[0] >= 40 and crop.shape[1] >= 20:
-                    result = classifier.predict(crop, verbose=False)
-                    conf = float(result[0].probs.top1conf)
-                    cls_team = int(result[0].probs.top1)
-
-                    if conf >= 0.60:
-                        team = "TeamA" if cls_team == 0 else "TeamB"
-                    else:
-                        team = last_team.get(id(box), None)
-                else:
-                    team = last_team.get(id(box), None)
-
-                last_team[id(box)] = team
-
-            if not USE_TEAM_CLASSIFIER:
-                if label == "player":
-                    draw_triangle(frame, cx, y1, COLOR_PLAYER_YOLO)
-                    draw_label(frame, cx, y1, "Player")
-                elif label == "goalkeeper":
-                    draw_triangle(frame, cx, y1, COLOR_GOALKEEPER_YOLO)
-                    draw_label(frame, cx, y1, "Goalkeeper")
-                elif label == "referee":
-                    draw_triangle(frame, cx, y1, COLOR_REFEREE)
-                    draw_label(frame, cx, y1, "Referee")
-                elif label == "ball":
-                    draw_ball(frame, x1, y1, w_box, h_box)
-            else:
-                if label == "player":
-                    if team == "TeamA":
-                        color = COLOR_TEAM_A
-                        text = "Team A Player"
-                    elif team == "TeamB":
-                        color = COLOR_TEAM_B
-                        text = "Team B Player"
-                    else:
-                        color = COLOR_PLAYER_YOLO
-                        text = "Player"
-                    draw_triangle(frame, cx, y1, color)
-                    draw_label(frame, cx, y1, text)
-
-                elif label == "goalkeeper":
-                    if team == "TeamA":
-                        color = COLOR_TEAM_A_GK
-                        text = "Team A GK"
-                    elif team == "TeamB":
-                        color = COLOR_TEAM_B_GK
-                        text = "Team B GK"
-                    else:
-                        color = COLOR_GOALKEEPER_YOLO
-                        text = "Goalkeeper"
-                    draw_triangle(frame, cx, y1, color)
-                    draw_label(frame, cx, y1, text)
-
-                elif label == "referee":
-                    draw_triangle(frame, cx, y1, COLOR_REFEREE)
-                    draw_label(frame, cx, y1, "Referee")
-
-                elif label == "ball":
-                    draw_ball(frame, x1, y1, w_box, h_box)
-
-            labels_file.write(
-                f"{frame_name} {label} {team if team else '-'} {x1} {y1} {x2} {y2}\n"
-            )
+            labels_file.write(f"{frame_name} {label} - {x1} {y1} {x2} {y2}\n")
 
         cv2.imwrite(frame_path, frame)
         writer.write(frame)
@@ -399,20 +173,10 @@ def process_video(model, classifier, local_video, original_name):
     writer.release()
     labels_file.close()
 
-    print(f"✔ Annotated video created: {output_video}")
-    print(f"✔ Frames saved in: {frames_dir}")
-    print(f"✔ Labels saved in: {labels_path}\n")
-
     return output_video, frames_dir, labels_path
 
 
-# ============================
-# MAIN PIPELINE
-# ============================
-
 def main():
-    print("🚀 Starting pipeline...\n")
-
     model_path = download_model(MODEL_URL, "best.pt")
     model = YOLO(model_path)
 
@@ -423,17 +187,27 @@ def main():
 
     files_all, files_videos = list_incoming()
     if not files_videos:
-        print("📭 No videos to process.\n")
+        print("📭 No videos to process.")
         return
 
     for file in files_videos:
-        key = file["Key"]  # incoming/<video>.mp4
-        print("\n========================================")
-        print(f"🎬 PROCESSING VIDEO: {key}")
-        print("========================================\n")
+        key = file["Key"]
+        json_key = key.replace(".mp4", ".json")
 
-        original_name = os.path.basename(key)
+        # 🔥🔥🔥 APAGAR ANTES DE PROCESSAR (CORREÇÃO CRÍTICA)
+        try:
+            print(f"🗑️ Removing incoming video BEFORE processing: {key}")
+            s3.delete_object(Bucket=BUCKET_NAME, Key=key)
+        except:
+            pass
 
+        try:
+            print(f"🗑️ Removing incoming JSON BEFORE processing: {json_key}")
+            s3.delete_object(Bucket=BUCKET_NAME, Key=json_key)
+        except:
+            pass
+
+        # Agora descarrega localmente
         local_video, local_json = download_video_and_json(key)
 
         with open(local_json, "r") as f:
@@ -451,21 +225,17 @@ def main():
 
         safe_video = convert_video_to_safe_format(cut_path)
 
-        output_video, frames_dir, labels_path = process_video(
-            model, classifier, safe_video, original_name
-        )
+        output_video, frames_dir, labels_path = process_video(model, classifier, safe_video, os.path.basename(key))
 
         annotated_remote = f"processed/{os.path.basename(output_video)}"
         upload_file(output_video, annotated_remote)
 
-        original_remote = f"processed/originals/{original_name}"
+        original_remote = f"processed/originals/{os.path.basename(key)}"
         upload_file(local_video, original_remote)
 
         for root, dirs, files_local in os.walk(frames_dir):
             for f in files_local:
-                local_path = os.path.join(root, f)
-                remote_path = f"processed/frames/{os.path.basename(frames_dir)}/{f}"
-                upload_file(local_path, remote_path)
+                upload_file(os.path.join(root, f), f"processed/frames/{os.path.basename(frames_dir)}/{f}")
 
         upload_file(labels_path, f"processed/labels/{os.path.basename(labels_path)}")
 
@@ -480,23 +250,7 @@ def main():
         os.remove(safe_video)
         os.remove(local_json)
 
-        # 🔥 APAGAR APENAS ESTE JOB EM incoming/
-        json_key = key.replace(".mp4", ".json")
-        try:
-            print(f"🗑️ Deleting incoming video: {key}")
-            s3.delete_object(Bucket=BUCKET_NAME, Key=key)
-        except Exception as e:
-            print(f"❌ Failed deleting video {key}: {e}")
-
-        try:
-            print(f"🗑️ Deleting incoming JSON: {json_key}")
-            s3.delete_object(Bucket=BUCKET_NAME, Key=json_key)
-        except Exception as e:
-            print(f"❌ Failed deleting JSON {json_key}: {e}")
-
-        print("✔ Cleanup complete for this video\n")
-
-    print("🎉 All videos processed.\n")
+    print("🎉 All videos processed.")
 
 
 if __name__ == "__main__":
