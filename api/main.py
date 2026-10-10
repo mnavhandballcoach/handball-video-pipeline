@@ -1,61 +1,111 @@
-from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
-from pathlib import Path
+from fastapi import FastAPI, UploadFile, Form, Request
+import os
+import subprocess
 import json
-
-from .b2_client import upload_bytes
-from .utils import generate_video_id
+import boto3
 
 app = FastAPI()
 
-# === CORS ===
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # ou mete "https://mnavhandballcoach.github.io"
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# ============================
+# CONFIG
+# ============================
+
+UPLOAD_DIR = "/tmp/chunks"
+FINAL_DIR = "/tmp/final"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(FINAL_DIR, exist_ok=True)
+
+BUCKET_NAME = "handball-videos"
+S3_ENDPOINT = "https://s3.eu-central-003.backblazeb2.com"
+
+AWS_KEY = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET = os.getenv("AWS_SECRET_ACCESS_KEY")
+
+s3 = boto3.client(
+    "s3",
+    endpoint_url=S3_ENDPOINT,
+    aws_access_key_id=AWS_KEY,
+    aws_secret_access_key=AWS_SECRET
 )
 
-# === Servir HTML e ficheiros estáticos ===
-static_dir = Path(__file__).resolve().parent.parent / "static"
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
+# ============================
+# UPLOAD CHUNK
+# ============================
 
-@app.get("/", response_class=HTMLResponse)
-def upload_page():
-    return (static_dir / "upload.html").read_text(encoding="utf-8")
-
-
-# === Endpoint principal de upload ===
-@app.post("/upload")
-async def upload_video(
-    file: UploadFile = File(...),
-    user_email: str = Form(...)
+@app.post("/upload_chunk")
+async def upload_chunk(
+    chunk: UploadFile = None,
+    index: int = Form(None),
+    filename: str = Form(None),
+    user_name: str = Form(None),
+    user_email: str = Form(None),
+    start_time: str = Form(None),
+    duration: str = Form(None),
+    finish: int = None
 ):
-    video_id = generate_video_id()
 
-    video_path = f"incoming/{video_id}.mp4"
-    meta_path = f"incoming/{video_id}.json"
+    # ============================
+    # 1) FINALIZAÇÃO → juntar chunks
+    # ============================
 
-    # guardar vídeo
-    content = await file.read()
-    upload_bytes(video_path, content, content_type="video/mp4")
+    if finish == 1:
+        final_path = f"{FINAL_DIR}/{filename}"
 
-    # guardar metadados
-    meta = {
-        "video_id": video_id,
-        "original_filename": file.filename,
-        "user_email": user_email,
-        "created_at": datetime.utcnow().isoformat(),
-        "status": "pending"
-    }
-    upload_bytes(meta_path, json.dumps(meta).encode(), content_type="application/json")
+        with open(final_path, "wb") as outfile:
+            i = 0
+            while True:
+                part = f"{UPLOAD_DIR}/{filename}.part{i}"
+                if not os.path.exists(part):
+                    break
+                with open(part, "rb") as infile:
+                    outfile.write(infile.read())
+                os.remove(part)
+                i += 1
 
-    return {
-        "message": "Vídeo recebido. Será processado na próxima hora.",
-        "video_id": video_id
-    }
+        # ============================
+        # 2) Criar JSON com metadata
+        # ============================
 
+        json_path = f"{FINAL_DIR}/{filename.replace('.mp4', '.json')}"
+        metadata = {
+            "email": user_email,
+            "name": user_name,
+            "start": int(start_time) if start_time else 0,
+            "duration": int(duration) if duration else 0
+        }
+
+        with open(json_path, "w") as f:
+            json.dump(metadata, f)
+
+        # ============================
+        # 3) Upload para Backblaze
+        # ============================
+
+        remote_video = f"incoming/{filename}"
+        remote_json = f"incoming/{filename.replace('.mp4', '.json')}"
+
+        s3.upload_file(final_path, BUCKET_NAME, remote_video)
+        s3.upload_file(json_path, BUCKET_NAME, remote_json)
+
+        # ============================
+        # 4) Chamar pipeline
+        # ============================
+
+        subprocess.Popen(["python3", "process_video.py"])
+
+        return {
+            "status": "completed",
+            "video": remote_video,
+            "json": remote_json
+        }
+
+    # ============================
+    # 5) RECEBER CHUNK NORMAL
+    # ============================
+
+    part_path = f"{UPLOAD_DIR}/{filename}.part{index}"
+
+    with open(part_path, "wb") as f:
+        f.write(await chunk.read())
+
+    return {"status": "ok", "chunk": index}
