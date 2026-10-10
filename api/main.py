@@ -45,7 +45,6 @@ BUCKET_NAME = os.getenv("B2_BUCKET_NAME")
 AWS_KEY = os.getenv("B2_KEY_ID")
 AWS_SECRET = os.getenv("B2_APP_KEY")
 
-# 🔥 ENDPOINT CORRETO DO BACKBLAZE S3
 S3_ENDPOINT = "https://s3.eu-central-003.backblazeb2.com"
 
 s3 = boto3.client(
@@ -66,7 +65,7 @@ os.makedirs(FINAL_DIR, exist_ok=True)
 
 @app.post("/upload_chunk")
 async def upload_chunk(
-    chunk: UploadFile = File(None),   # 🔥 CORRIGIDO: garantir que é ficheiro
+    chunk: UploadFile = File(None),   # 🔥 CORRIGIDO
     index: int = Form(None),
     filename: str = Form(None),
     user_name: str = Form(None),
