@@ -72,11 +72,10 @@
   <div id="status"></div>
 
   <script>
-    // URL ABSOLUTO DO CLOUD RUN (OBRIGATÓRIO)
     const UPLOAD_URL =
       "https://handball-video-pipeline-git-1007213034860.europe-west1.run.app/upload_chunk";
 
-    const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB por chunk
+    const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
 
     const fileInput = document.getElementById("file");
     const nameInput = document.getElementById("name");
@@ -92,7 +91,7 @@
       console.log("STATUS:", msg);
     }
 
-    // DEBUG: função para enviar chunk via XHR
+    // ENVIO DO CHUNK COM MIME TYPE FORÇADO
     function uploadChunkXHR(chunk, index, filename, name, email, start, duration) {
       return new Promise((resolve, reject) => {
         console.log("DEBUG: Enviando chunk", index, "tamanho:", chunk.size);
@@ -100,11 +99,8 @@
         const xhr = new XMLHttpRequest();
         xhr.open("POST", UPLOAD_URL);
 
-        // DEBUG: progresso do upload
         xhr.upload.onprogress = (e) => {
-          console.log(
-            `DEBUG: XHR progresso chunk ${index}: ${e.loaded}/${e.total}`
-          );
+          console.log(`DEBUG: XHR progresso chunk ${index}: ${e.loaded}/${e.total}`);
         };
 
         xhr.onload = () => {
@@ -119,7 +115,7 @@
         };
 
         const formData = new FormData();
-        formData.append("chunk", chunk);
+        formData.append("chunk", chunk, filename + ".part" + index);
         formData.append("index", index);
         formData.append("filename", filename);
         formData.append("user_name", name);
@@ -131,7 +127,6 @@
       });
     }
 
-    // DEBUG: finalização
     function finalizeUploadXHR(filename, name, email, start, duration) {
       return new Promise((resolve, reject) => {
         console.log("DEBUG: Finalizando upload…");
@@ -183,7 +178,12 @@
 
       try {
         while (startByte < file.size) {
-          const chunk = file.slice(startByte, startByte + CHUNK_SIZE);
+          let raw = file.slice(startByte, startByte + CHUNK_SIZE);
+
+          // PATCH CRÍTICO: forçar MIME type
+          const chunk = new Blob([raw], {
+            type: file.type || "application/octet-stream"
+          });
 
           console.log("DEBUG: Chunk lido →", chunk);
 
