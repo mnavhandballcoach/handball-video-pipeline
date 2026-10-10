@@ -10,6 +10,10 @@ CHUNK_DIR = "/tmp/chunks"
 os.makedirs(CHUNK_DIR, exist_ok=True)
 
 
+# ============================================================
+#   RECEBER CHUNK (POST)
+# ============================================================
+
 @router.post("/upload_chunk")
 async def upload_chunk(
     chunk: UploadFile,
@@ -33,6 +37,10 @@ async def upload_chunk(
     return JSONResponse({"status": "chunk_received"})
 
 
+# ============================================================
+#   FINALIZAR UPLOAD (GET)
+# ============================================================
+
 @router.get("/upload_chunk")
 async def finish_upload(filename: str, finish: int = 0):
     if finish != 1:
@@ -43,6 +51,7 @@ async def finish_upload(filename: str, finish: int = 0):
     if not os.path.exists(file_dir):
         return JSONResponse({"error": "no_chunks_found"}, status_code=400)
 
+    # Ordenar partes
     parts = sorted(
         [p for p in os.listdir(file_dir) if p.endswith(".part")],
         key=lambda x: int(x.replace(".part", ""))
@@ -50,6 +59,7 @@ async def finish_upload(filename: str, finish: int = 0):
 
     final_path = os.path.join(CHUNK_DIR, f"final_{filename}")
 
+    # Reconstruir vídeo
     with open(final_path, "wb") as final_file:
         for part in parts:
             with open(os.path.join(file_dir, part), "rb") as p:
@@ -57,7 +67,7 @@ async def finish_upload(filename: str, finish: int = 0):
 
     print(f"✔ Vídeo reconstruído: {final_path}")
 
-    # Metadata JSON
+    # Criar JSON
     json_data = {
         "email": "",
         "name": "",
@@ -70,6 +80,7 @@ async def finish_upload(filename: str, finish: int = 0):
     remote_video = f"incoming/{filename}"
     remote_json = f"incoming/{filename.replace('.mp4', '.json')}"
 
+    # Upload para Backblaze
     with open(final_path, "rb") as f:
         upload_bytes(remote_video, f.read(), "video/mp4")
 
@@ -77,6 +88,7 @@ async def finish_upload(filename: str, finish: int = 0):
 
     print("✔ Vídeo + JSON enviados para Backblaze")
 
+    # Limpeza
     shutil.rmtree(file_dir)
     os.remove(final_path)
 
