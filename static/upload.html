@@ -1,103 +1,97 @@
-import os
-import shutil
-from fastapi import APIRouter, UploadFile, Form
-from fastapi.responses import JSONResponse
-from api.b2_client import upload_bytes
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <title>Upload de Vídeo de Handball</title>
+  <style>
+    body { font-family: Arial; max-width: 500px; margin: 40px auto; }
+    #progress-container { margin-top: 20px; display: none; }
+    #progress-bar { width: 0%; height: 20px; background-color: #0078ff; }
+    #status { margin-top: 10px; font-weight: bold; }
+  </style>
+</head>
+<body>
 
-router = APIRouter()
+<h2>Upload de Vídeo de Handball</h2>
 
-CHUNK_DIR = "/tmp/chunks"
+<form id="uploadForm">
+  <label>Vídeo (.mp4)</label>
+  <input type="file" id="file" name="file" accept="video/mp4" required>
 
-# garantir que existe
-os.makedirs(CHUNK_DIR, exist_ok=True)
+  <label>O seu nome</label>
+  <input type="text" id="user_name" required>
 
+  <label>O seu email</label>
+  <input type="email" id="user_email" required>
 
-@router.post("/upload_chunk")
-async def upload_chunk(
-    chunk: UploadFile,
-    index: int = Form(...),
-    filename: str = Form(...),
-    user_name: str = Form(...),
-    user_email: str = Form(...),
-    start_time: str = Form("0"),
-    duration: str = Form("0")
-):
-    """
-    Recebe um chunk e guarda-o no /tmp/chunks/<filename>/<index>.part
-    """
+  <label>Início (segundos)</label>
+  <input type="number" id="start_time" min="0">
 
-    # pasta do ficheiro
-    file_dir = os.path.join(CHUNK_DIR, filename)
-    os.makedirs(file_dir, exist_ok=True)
+  <label>Duração (segundos)</label>
+  <input type="number" id="duration" min="1">
 
-    # caminho do chunk
-    chunk_path = os.path.join(file_dir, f"{index}.part")
+  <button type="submit">Enviar vídeo</button>
+</form>
 
-    # guardar chunk
-    with open(chunk_path, "wb") as f:
-        f.write(await chunk.read())
+<div id="progress-container">
+  <div id="progress-bar"></div>
+</div>
 
-    print(f"✔ Chunk {index} recebido para {filename}")
+<div id="status"></div>
 
-    return JSONResponse({"status": "chunk_received"})
+<script>
+const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+const UPLOAD_URL = "https://handball-video-pipeline-git-1007213034860.europe-west1.run.app/upload_chunk";
 
+const form = document.getElementById("uploadForm");
+const progressContainer = document.getElementById("progress-container");
+const progressBar = document.getElementById("progress-bar");
+const status = document.getElementById("status");
 
-@router.get("/upload_chunk")
-async def finish_upload(filename: str, finish: int = 0):
-    """
-    Junta todos os chunks e cria o ficheiro final.
-    """
+form.addEventListener("submit", async function(event) {
+  event.preventDefault();
 
-    if finish != 1:
-        return JSONResponse({"error": "invalid_finish_flag"}, status_code=400)
+  const file = document.getElementById("file").files[0];
+  const name = document.getElementById("user_name").value;
+  const email = document.getElementById("user_email").value;
+  const start = document.getElementById("start_time").value;
+  const duration = document.getElementById("duration").value;
 
-    file_dir = os.path.join(CHUNK_DIR, filename)
+  progressContainer.style.display = "block";
+  status.innerHTML = "A enviar vídeo...";
 
-    if not os.path.exists(file_dir):
-        return JSONResponse({"error": "no_chunks_found"}, status_code=400)
+  let startByte = 0;
+  let index = 0;
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
-    # ordenar chunks
-    parts = sorted(
-        [p for p in os.listdir(file_dir) if p.endswith(".part")],
-        key=lambda x: int(x.replace(".part", ""))
-    )
+  while (startByte < file.size) {
+    const chunk = file.slice(startByte, startByte + CHUNK_SIZE);
 
-    final_path = os.path.join(CHUNK_DIR, f"final_{filename}")
+    const formData = new FormData();
+    formData.append("chunk", chunk);
+    formData.append("index", index);
+    formData.append("filename", file.name);
+    formData.append("user_name", name);
+    formData.append("user_email", email);
+    formData.append("start_time", start);
+    formData.append("duration", duration);
 
-    # juntar chunks
-    with open(final_path, "wb") as final_file:
-        for part in parts:
-            part_path = os.path.join(file_dir, part)
-            with open(part_path, "rb") as p:
-                final_file.write(p.read())
+    await fetch(UPLOAD_URL, { method: "POST", body: formData });
 
-    print(f"✔ Vídeo reconstruído: {final_path}")
+    startByte += CHUNK_SIZE;
+    index++;
 
-    # criar JSON
-    json_data = {
-        "email": "",
-        "name": "",
-        "start": 0,
-        "duration": 0
-    }
+    progressBar.style.width = ((startByte / file.size) * 100) + "%";
+  }
 
-    json_bytes = str(json_data).encode("utf-8")
+  status.innerHTML = "A finalizar upload...";
 
-    # enviar para Backblaze
-    remote_video = f"incoming/{filename}"
-    remote_json = f"incoming/{filename.replace('.mp4', '.json')}"
+  await fetch(`${UPLOAD_URL}?finish=1&filename=${file.name}`);
 
-    with open(final_path, "rb") as f:
-        upload_bytes(remote_video, f.read(), "video/mp4")
+  progressBar.style.backgroundColor = "#00c851";
+  status.innerHTML = "✔ Vídeo enviado com sucesso!";
+});
+</script>
 
-    upload_bytes(remote_json, json_bytes, "application/json")
-
-    print("✔ Vídeo + JSON enviados para Backblaze")
-
-    # limpar chunks
-    shutil.rmtree(file_dir)
-    os.remove(final_path)
-
-    print("✔ Limpeza completa")
-
-    return JSONResponse({"status": "upload_complete"})
+</body>
+</html>
