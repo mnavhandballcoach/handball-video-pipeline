@@ -60,7 +60,7 @@ def list_prefix(prefix: str):
 def hard_delete_file(path: str):
     """
     Hard delete real: remove TODAS as versões do ficheiro no B2.
-    Sem hidden versions, sem duplicações, sem lixo.
+    Compatível com B2SDK v2 (list_file_versions devolve apenas FileVersion).
     """
     b2_api = get_b2_client()
     bucket = b2_api.get_bucket_by_name(os.getenv("B2_BUCKET_NAME"))
@@ -69,7 +69,7 @@ def hard_delete_file(path: str):
 
     deleted_any = False
 
-    for file_version, _ in versions:
+    for file_version in versions:   # <- CORREÇÃO AQUI
         print(f"🔥 HARD DELETE: {path} (version {file_version.id_})")
         bucket.delete_file_version(file_version.id_, file_version.file_name)
         deleted_any = True
