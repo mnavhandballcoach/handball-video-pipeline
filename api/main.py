@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, Form
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,7 +66,7 @@ os.makedirs(FINAL_DIR, exist_ok=True)
 
 @app.post("/upload_chunk")
 async def upload_chunk(
-    chunk: UploadFile = None,
+    chunk: UploadFile = File(None),   # 🔥 CORRIGIDO: garantir que é ficheiro
     index: int = Form(None),
     filename: str = Form(None),
     user_name: str = Form(None),
@@ -81,6 +81,7 @@ async def upload_chunk(
 
     if finish and filename:
         final_path = f"{FINAL_DIR}/{filename}"
+        print("DEBUG BACKEND → FINALIZAR:", final_path)
 
         # Juntar todos os chunks
         with open(final_path, "wb") as outfile:
@@ -93,6 +94,9 @@ async def upload_chunk(
                     outfile.write(infile.read())
                 os.remove(part)
                 i += 1
+
+        final_size = os.path.getsize(final_path)
+        print("DEBUG BACKEND → FINAL COMPLETO:", final_size)
 
         # Criar JSON se metadata existir
         if user_email or user_name:
@@ -129,11 +133,16 @@ async def upload_chunk(
     # ============================================================
 
     if not filename or index is None or chunk is None:
+        print("DEBUG BACKEND → chunk/index/filename ausentes")
         return {"status": "error", "detail": "chunk, index e filename são obrigatórios"}
 
-    part_path = f"{UPLOAD_DIR}/{filename}.part{index}"
+    # 🔥 Ler bytes reais do chunk
+    data = await chunk.read()
+    print("DEBUG BACKEND → chunk index:", index, "size:", len(data))
 
+    # Guardar chunk no disco
+    part_path = f"{UPLOAD_DIR}/{filename}.part{index}"
     with open(part_path, "wb") as f:
-        f.write(await chunk.read())
+        f.write(data)
 
     return {"status": "ok", "chunk": index}
