@@ -1,138 +1,197 @@
 <!DOCTYPE html>
 <html lang="pt">
 <head>
-  <meta charset="UTF-8">
-  <title>Upload de Vídeo de Handball</title>
+  <meta charset="UTF-8" />
+  <title>Upload de vídeo</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 500px; margin: 40px auto; }
-    label { font-weight: bold; margin-top: 15px; display: block; }
-    input, button { width: 100%; padding: 8px; margin-top: 5px; }
-    button { margin-top: 20px; background-color: #0078ff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    button:hover { background-color: #005fcc; }
-    #progress-container { margin-top: 20px; display: none; }
-    #progress-bar { width: 0%; height: 20px; background-color: #0078ff; border-radius: 4px; }
-    #status { margin-top: 10px; font-weight: bold; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+      padding: 0 16px;
+    }
+    h1 {
+      font-size: 1.4rem;
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      margin-top: 12px;
+      font-size: 0.9rem;
+    }
+    input, button {
+      margin-top: 4px;
+      padding: 8px;
+      font-size: 0.9rem;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    #progress-container {
+      margin-top: 16px;
+      background: #eee;
+      border-radius: 4px;
+      overflow: hidden;
+      height: 10px;
+    }
+    #progress-bar {
+      width: 0%;
+      height: 100%;
+      background: #4caf50;
+      transition: width 0.1s linear;
+    }
+    #status {
+      margin-top: 12px;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
+  <h1>Upload de vídeo</h1>
 
-<h2>Upload de Vídeo de Handball</h2>
-<p>Envie o seu vídeo para ser analisado automaticamente.</p>
+  <label for="file">Vídeo (.mp4 / .mov)</label>
+  <input type="file" id="file" accept="video/*" />
 
-<form id="uploadForm">
-  <label for="file">Vídeo (.mp4)</label>
-  <input type="file" id="file" name="file" accept="video/mp4" required>
+  <label for="name">Nome</label>
+  <input type="text" id="name" placeholder="Opcional" />
 
-  <label for="user_name">O seu nome</label>
-  <input type="text" id="user_name" name="user_name" required>
+  <label for="email">Email</label>
+  <input type="email" id="email" placeholder="Opcional" />
 
-  <label for="user_email">O seu email</label>
-  <input type="email" id="user_email" name="user_email" required>
-
-  <label for="start_time">Início (segundos)</label>
-  <input type="number" id="start_time" name="start_time" min="0">
+  <label for="start">Início (segundos)</label>
+  <input type="number" id="start" min="0" value="0" />
 
   <label for="duration">Duração (segundos)</label>
-  <input type="number" id="duration" name="duration" min="1">
+  <input type="number" id="duration" min="0" value="0" />
 
-  <button type="submit">Enviar vídeo</button>
-</form>
+  <button id="upload-btn">Enviar vídeo</button>
 
-<div id="progress-container">
-  <div id="progress-bar"></div>
-</div>
+  <div id="progress-container">
+    <div id="progress-bar"></div>
+  </div>
 
-<div id="status"></div>
+  <div id="status"></div>
 
-<script>
-const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
-const UPLOAD_URL = "https://handball-video-pipeline-git-1007213034860.europe-west1.run.app/upload_chunk";
+  <script>
+    const UPLOAD_URL = "/upload_chunk"; // mesmo endpoint do main.py
+    const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB por chunk
 
-const form = document.getElementById("uploadForm");
-const progressContainer = document.getElementById("progress-container");
-const progressBar = document.getElementById("progress-bar");
-const status = document.getElementById("status");
+    const fileInput = document.getElementById("file");
+    const nameInput = document.getElementById("name");
+    const emailInput = document.getElementById("email");
+    const startInput = document.getElementById("start");
+    const durationInput = document.getElementById("duration");
+    const uploadBtn = document.getElementById("upload-btn");
+    const progressBar = document.getElementById("progress-bar");
+    const statusEl = document.getElementById("status");
 
-form.addEventListener("submit", async function(event) {
-  event.preventDefault();
-
-  const file = document.getElementById("file").files[0];
-  const name = document.getElementById("user_name").value;
-  const email = document.getElementById("user_email").value;
-  const start = document.getElementById("start_time").value;
-  const duration = document.getElementById("duration").value;
-
-  if (!file) {
-    alert("Selecione um vídeo.");
-    return;
-  }
-
-  progressContainer.style.display = "block";
-  progressBar.style.width = "0%";
-  progressBar.style.backgroundColor = "#0078ff";
-  status.innerHTML = "A enviar vídeo...";
-
-  let startByte = 0;
-  let index = 0;
-  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-
-  while (startByte < file.size) {
-    const chunk = file.slice(startByte, startByte + CHUNK_SIZE);
-
-    const formData = new FormData();
-    formData.append("chunk", chunk);
-    formData.append("index", index);
-    formData.append("filename", file.name);
-    formData.append("user_name", name);
-    formData.append("user_email", email);
-    formData.append("start_time", start);
-    formData.append("duration", duration);
-
-    status.innerHTML = `A enviar parte ${index + 1} de ${totalChunks}...`;
-
-    const res = await fetch(UPLOAD_URL, {
-      method: "POST",
-      body: formData
-    });
-
-    if (!res.ok) {
-      status.innerHTML = "❌ Erro de rede ao enviar o vídeo.";
-      progressBar.style.backgroundColor = "#ff4444";
-      return;
+    function setStatus(msg) {
+      statusEl.textContent = msg;
     }
 
-    startByte += CHUNK_SIZE;
-    index++;
+    function uploadChunkXHR(chunk, index, filename, name, email, start, duration) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", UPLOAD_URL);
 
-    const percent = Math.min(100, (startByte / file.size) * 100);
-    progressBar.style.width = percent + "%";
-  }
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            resolve();
+          } else {
+            reject("Erro no chunk " + index + " (HTTP " + xhr.status + ")");
+          }
+        };
 
-  status.innerHTML = "A finalizar upload...";
+        xhr.onerror = () => {
+          reject("Erro de rede no chunk " + index);
+        };
 
-  const finishData = new FormData();
-  finishData.append("finish", 1);
-  finishData.append("filename", file.name);
-  finishData.append("user_name", name);
-  finishData.append("user_email", email);
-  finishData.append("start_time", start);
-  finishData.append("duration", duration);
+        const formData = new FormData();
+        formData.append("chunk", chunk);
+        formData.append("index", index);
+        formData.append("filename", filename);
+        formData.append("user_name", name);
+        formData.append("user_email", email);
+        formData.append("start_time", start);
+        formData.append("duration", duration);
 
-  const finishRes = await fetch(UPLOAD_URL, {
-    method: "POST",
-    body: finishData
-  });
+        xhr.send(formData);
+      });
+    }
 
-  if (!finishRes.ok) {
-    status.innerHTML = "❌ Erro ao finalizar o upload.";
-    progressBar.style.backgroundColor = "#ff4444";
-    return;
-  }
+    function finalizeUploadXHR(filename, name, email, start, duration) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", UPLOAD_URL);
 
-  progressBar.style.backgroundColor = "#00c851";
-  status.innerHTML = "✔ Vídeo enviado com sucesso! Irá receber o resultado por email.";
-});
-</script>
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            resolve();
+          } else {
+            reject("Erro ao finalizar upload (HTTP " + xhr.status + ")");
+          }
+        };
 
+        xhr.onerror = () => {
+          reject("Erro de rede ao finalizar upload");
+        };
+
+        const formData = new FormData();
+        formData.append("finish", 1);
+        formData.append("filename", filename);
+        formData.append("user_name", name);
+        formData.append("user_email", email);
+        formData.append("start_time", start);
+        formData.append("duration", duration);
+
+        xhr.send(formData);
+      });
+    }
+
+    uploadBtn.addEventListener("click", async () => {
+      const file = fileInput.files[0];
+      if (!file) {
+        setStatus("⚠️ Escolhe um ficheiro de vídeo primeiro.");
+        return;
+      }
+
+      const name = nameInput.value || "";
+      const email = emailInput.value || "";
+      const start = startInput.value || "0";
+      const duration = durationInput.value || "0";
+
+      uploadBtn.disabled = true;
+      setStatus("🚀 A enviar vídeo em chunks...");
+      progressBar.style.width = "0%";
+
+      let startByte = 0;
+      let index = 0;
+
+      try {
+        while (startByte < file.size) {
+          const chunk = file.slice(startByte, startByte + CHUNK_SIZE);
+
+          await uploadChunkXHR(chunk, index, file.name, name, email, start, duration);
+
+          startByte += CHUNK_SIZE;
+          index++;
+
+          const percent = Math.min(100, (startByte / file.size) * 100);
+          progressBar.style.width = percent + "%";
+        }
+
+        setStatus("✅ A finalizar o upload no servidor...");
+
+        await finalizeUploadXHR(file.name, name, email, start, duration);
+
+        progressBar.style.width = "100%";
+        setStatus("🎉 Upload concluído! O vídeo está a ser processado.");
+      } catch (err) {
+        console.error(err);
+        setStatus("❌ Erro no upload: " + err);
+      } finally {
+        uploadBtn.disabled = false;
+      }
+    });
+  </script>
 </body>
 </html>
