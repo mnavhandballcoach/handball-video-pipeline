@@ -112,18 +112,18 @@ def download_model(url, filename):
 
 
 # ============================
-# LIST VIDEOS (prefixo incoming real)
+# LIST VIDEOS (APENAS incoming/)
 # ============================
 
 def list_incoming():
-    print("📂 Listing videos in bucket...")
-    resp = s3.list_objects_v2(Bucket=BUCKET_NAME)
+    print("📂 Listing videos in bucket (incoming/)...")
+    resp = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix="incoming/")
     files = resp.get("Contents", [])
 
     video_exts = (".mp4", ".mov", ".avi", ".mkv")
     videos = [f for f in files if f["Key"].lower().endswith(video_exts)]
 
-    print(f"✔ Found {len(videos)} videos\n")
+    print(f"✔ Found {len(videos)} videos in incoming/\n")
     return files, videos
 
 
@@ -137,7 +137,6 @@ def download_video_and_json(key):
     local_video = "input.mp4"
     local_json = "input.json"
 
-    # Download video using GET (Backblaze-compatible)
     try:
         obj = s3.get_object(Bucket=BUCKET_NAME, Key=key)
         with open(local_video, "wb") as f:
@@ -147,7 +146,6 @@ def download_video_and_json(key):
         print("❌ Failed to download video:", e)
         raise
 
-    # Try JSON (optional)
     json_key = key.replace(".mp4", ".json")
 
     try:
@@ -167,7 +165,6 @@ def download_video_and_json(key):
 
     print("✔ Download complete\n")
     return local_video, local_json
-
 
 
 # ============================
@@ -429,10 +426,8 @@ def main():
         print("📭 No videos to process.\n")
         return
 
-    incoming_keys = [f["Key"] for f in files_all]
-
     for file in files_videos:
-        key = file["Key"]  # prefix incoming/ preserved
+        key = file["Key"]  # incoming/<video>.mp4
         print("\n========================================")
         print(f"🎬 PROCESSING VIDEO: {key}")
         print("========================================\n")
@@ -485,18 +480,22 @@ def main():
         os.remove(safe_video)
         os.remove(local_json)
 
-        print("✔ Cleanup complete for this video\n")
-
-    print("🗑️ Cleaning bucket at the end...")
-
-    for key in incoming_keys:
+        # 🔥 APAGAR APENAS ESTE JOB EM incoming/
+        json_key = key.replace(".mp4", ".json")
         try:
-            print(f"Deleting: {key}")
+            print(f"🗑️ Deleting incoming video: {key}")
             s3.delete_object(Bucket=BUCKET_NAME, Key=key)
         except Exception as e:
-            print(f"❌ Failed deleting {key}: {e}")
+            print(f"❌ Failed deleting video {key}: {e}")
 
-    print("✔ Bucket cleaned\n")
+        try:
+            print(f"🗑️ Deleting incoming JSON: {json_key}")
+            s3.delete_object(Bucket=BUCKET_NAME, Key=json_key)
+        except Exception as e:
+            print(f"❌ Failed deleting JSON {json_key}: {e}")
+
+        print("✔ Cleanup complete for this video\n")
+
     print("🎉 All videos processed.\n")
 
 
