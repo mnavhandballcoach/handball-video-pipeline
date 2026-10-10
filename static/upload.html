@@ -80,61 +80,67 @@
 
   <div id="status"></div>
 
-  <script>
-    const form = document.getElementById("uploadForm");
-    const progressContainer = document.getElementById("progress-container");
-    const progressBar = document.getElementById("progress-bar");
-    const status = document.getElementById("status");
+<script>
+const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+const UPLOAD_URL = "https://handball-video-pipeline-git-1007213034860.europe-west1.run.app/upload_chunk";
 
-    form.addEventListener("submit", function(event) {
-      event.preventDefault();
+const form = document.getElementById("uploadForm");
+const progressContainer = document.getElementById("progress-container");
+const progressBar = document.getElementById("progress-bar");
+const status = document.getElementById("status");
 
-      const file = document.getElementById("file").files[0];
-      const name = document.getElementById("user_name").value;
-      const email = document.getElementById("user_email").value;
-      const start = document.getElementById("start_time").value;
-      const duration = document.getElementById("duration").value;
+form.addEventListener("submit", async function(event) {
+  event.preventDefault();
 
-      if (!file) {
-        alert("Selecione um vídeo.");
-        return;
-      }
+  const file = document.getElementById("file").files[0];
+  const name = document.getElementById("user_name").value;
+  const email = document.getElementById("user_email").value;
+  const start = document.getElementById("start_time").value;
+  const duration = document.getElementById("duration").value;
 
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("user_name", name);
-      formData.append("user_email", email);
-      formData.append("start_time", start);
-      formData.append("duration", duration);
+  if (!file) {
+    alert("Selecione um vídeo.");
+    return;
+  }
 
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", "https://handball-video-pipeline-git-1007213034860.europe-west1.run.app/upload", true);
+  progressContainer.style.display = "block";
+  progressBar.style.width = "0%";
+  status.innerHTML = "A enviar vídeo...";
 
-      xhr.upload.onprogress = function(event) {
-        if (event.lengthComputable) {
-          const percent = (event.loaded / event.total) * 100;
-          progressContainer.style.display = "block";
-          progressBar.style.width = percent + "%";
-        }
-      };
+  let startByte = 0;
+  let index = 0;
 
-      xhr.onload = function() {
-        if (xhr.status === 200) {
-          status.innerHTML = "✔ Vídeo enviado com sucesso! Irá receber o resultado por email.";
-          progressBar.style.backgroundColor = "#00c851";
-        } else {
-          status.innerHTML = "❌ Erro ao enviar o vídeo.";
-          progressBar.style.backgroundColor = "#ff4444";
-        }
-      };
+  while (startByte < file.size) {
+    const chunk = file.slice(startByte, startByte + CHUNK_SIZE);
 
-      xhr.onerror = function() {
-        status.innerHTML = "❌ Erro de rede ao enviar o vídeo.";
-      };
+    const formData = new FormData();
+    formData.append("chunk", chunk);
+    formData.append("index", index);
+    formData.append("filename", file.name);
+    formData.append("user_name", name);
+    formData.append("user_email", email);
+    formData.append("start_time", start);
+    formData.append("duration", duration);
 
-      xhr.send(formData);
+    await fetch(UPLOAD_URL, {
+      method: "POST",
+      body: formData
     });
-  </script>
+
+    startByte += CHUNK_SIZE;
+    index++;
+
+    const percent = Math.min(100, (startByte / file.size) * 100);
+    progressBar.style.width = percent + "%";
+  }
+
+  // sinalizar fim
+  await fetch(`${UPLOAD_URL}?finish=1&filename=${file.name}`);
+
+  progressBar.style.backgroundColor = "#00c851";
+  status.innerHTML = "✔ Vídeo enviado com sucesso! Irá receber o resultado por email.";
+});
+</script>
 
 </body>
 </html>
