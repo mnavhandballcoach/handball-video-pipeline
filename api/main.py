@@ -72,14 +72,10 @@ async def upload_chunk(
     user_email: str = Form(None),
     start_time: str = Form(None),
     duration: str = Form(None),
-    finish: int = None
+    finish: int = Form(None)
 ):
-
-    # ============================================================
-    #   FINALIZAÇÃO — juntar chunks e fazer upload
-    # ============================================================
-
-    if finish == 1:
+    # FINALIZAÇÃO
+    if finish and filename:
         final_path = f"{FINAL_DIR}/{filename}"
 
         # Juntar todos os chunks
@@ -94,10 +90,7 @@ async def upload_chunk(
                 os.remove(part)
                 i += 1
 
-        # ============================================================
-        #   Criar JSON apenas se metadata existir
-        # ============================================================
-
+        # Criar JSON se metadata existir
         if user_email or user_name:
             json_path = f"{FINAL_DIR}/{filename.replace('.mp4', '.json')}"
             metadata = {
@@ -116,23 +109,20 @@ async def upload_chunk(
                 f"incoming/{filename.replace('.mp4', '.json')}"
             )
 
-        # ============================================================
-        #   Upload do vídeo (SEMPRE)
-        # ============================================================
-
+        # Upload do vídeo (sempre)
         s3.upload_file(final_path, BUCKET_NAME, f"incoming/{filename}")
 
-        # ============================================================
-        #   Chamar pipeline
-        # ============================================================
-
-        subprocess.Popen(["python3", "process_video.py"])
+        # Chamar pipeline
+        try:
+            subprocess.Popen(["python", "/app/process_video.py"])
+        except Exception as e:
+            print("Erro ao chamar pipeline:", e)
 
         return {"status": "completed", "video": filename}
 
-    # ============================================================
-    #   RECEBER CHUNK NORMAL
-    # ============================================================
+    # RECEBER CHUNK NORMAL
+    if not filename or index is None or chunk is None:
+        return {"status": "error", "detail": "chunk, index e filename são obrigatórios"}
 
     part_path = f"{UPLOAD_DIR}/{filename}.part{index}"
 
@@ -140,12 +130,3 @@ async def upload_chunk(
         f.write(await chunk.read())
 
     return {"status": "ok", "chunk": index}
-
-
-# ============================================================
-#   GET /upload_chunk — evitar 405 no Safari e bots
-# ============================================================
-
-@app.get("/upload_chunk")
-def upload_chunk_get():
-    return {"status": "use POST for chunks", "finish": "use GET only with filename"}
