@@ -1,7 +1,11 @@
 import os
 from b2sdk.v2 import B2Api, InMemoryAccountInfo
 
+
 def get_b2_client():
+    """
+    Cria cliente B2 autenticado com as variáveis de ambiente do Cloud Run.
+    """
     account_info = InMemoryAccountInfo()
     b2_api = B2Api(account_info)
 
@@ -15,6 +19,9 @@ def get_b2_client():
 
 
 def upload_bytes(path: str, data: bytes, content_type: str):
+    """
+    Upload simples de bytes para o bucket Backblaze.
+    """
     b2_api = get_b2_client()
     bucket = b2_api.get_bucket_by_name(os.getenv("B2_BUCKET_NAME"))
 
@@ -26,6 +33,9 @@ def upload_bytes(path: str, data: bytes, content_type: str):
 
 
 def download_bytes(path: str) -> bytes:
+    """
+    Download de bytes de um ficheiro no bucket.
+    """
     b2_api = get_b2_client()
     bucket = b2_api.get_bucket_by_name(os.getenv("B2_BUCKET_NAME"))
 
@@ -34,6 +44,9 @@ def download_bytes(path: str) -> bytes:
 
 
 def move_file(old_path: str, new_path: str):
+    """
+    Move um ficheiro dentro do bucket (copy + delete).
+    """
     b2_api = get_b2_client()
     bucket = b2_api.get_bucket_by_name(os.getenv("B2_BUCKET_NAME"))
 
@@ -49,18 +62,19 @@ def move_file(old_path: str, new_path: str):
 
 
 def list_prefix(prefix: str):
+    """
+    Lista ficheiros com um prefixo (ex: incoming/).
+    """
     b2_api = get_b2_client()
     bucket = b2_api.get_bucket_by_name(os.getenv("B2_BUCKET_NAME"))
 
     return list(bucket.ls(prefix=prefix))
 
 
-# ⭐⭐⭐ HARD DELETE REAL — REMOVE TODAS AS VERSÕES ⭐⭐⭐
-
 def hard_delete_file(path: str):
     """
-    Hard delete real: remove TODAS as versões do ficheiro no B2.
-    Compatível com B2SDK v2 (list_file_versions devolve apenas FileVersion).
+    HARD DELETE real — remove TODAS as versões do ficheiro no B2.
+    Compatível com B2SDK v2 (list_file_versions devolve FileVersion).
     """
     b2_api = get_b2_client()
     bucket = b2_api.get_bucket_by_name(os.getenv("B2_BUCKET_NAME"))
@@ -69,7 +83,7 @@ def hard_delete_file(path: str):
 
     deleted_any = False
 
-    for file_version in versions:   # <- CORREÇÃO AQUI
+    for file_version in versions:  # ← CORRETO para B2SDK v2
         print(f"🔥 HARD DELETE: {path} (version {file_version.id_})")
         bucket.delete_file_version(file_version.id_, file_version.file_name)
         deleted_any = True
