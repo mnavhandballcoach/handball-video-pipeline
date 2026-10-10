@@ -42,10 +42,11 @@ def upload_page():
 # ============================================================
 
 BUCKET_NAME = os.getenv("B2_BUCKET_NAME")
-S3_ENDPOINT = os.getenv("B2_ENDPOINT")
-
 AWS_KEY = os.getenv("B2_KEY_ID")
 AWS_SECRET = os.getenv("B2_APP_KEY")
+
+# 🔥 ENDPOINT CORRETO DO BACKBLAZE S3
+S3_ENDPOINT = "https://s3.eu-central-003.backblazeb2.com"
 
 s3 = boto3.client(
     "s3",
@@ -74,7 +75,10 @@ async def upload_chunk(
     duration: str = Form(None),
     finish: int = Form(None)
 ):
-    # FINALIZAÇÃO
+    # ============================================================
+    #   FINALIZAÇÃO — juntar chunks e fazer upload
+    # ============================================================
+
     if finish and filename:
         final_path = f"{FINAL_DIR}/{filename}"
 
@@ -120,7 +124,10 @@ async def upload_chunk(
 
         return {"status": "completed", "video": filename}
 
-    # RECEBER CHUNK NORMAL
+    # ============================================================
+    #   RECEBER CHUNK NORMAL
+    # ============================================================
+
     if not filename or index is None or chunk is None:
         return {"status": "error", "detail": "chunk, index e filename são obrigatórios"}
 
