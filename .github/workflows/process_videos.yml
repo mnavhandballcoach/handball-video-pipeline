@@ -25,6 +25,10 @@ jobs:
       run: |
         pip install ultralytics requests boto3 python-dotenv opencv-python
 
+    - name: Install Backblaze B2 SDK
+      run: pip install b2sdk
+
+
     - name: Install ffmpeg
       run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
