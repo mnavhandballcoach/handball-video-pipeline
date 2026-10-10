@@ -1,0 +1,84 @@
+import os
+import shutil
+from fastapi import APIRouter, UploadFile, Form
+from fastapi.responses import JSONResponse
+from api.b2_client import upload_bytes
+
+router = APIRouter()
+
+CHUNK_DIR = "/tmp/chunks"
+os.makedirs(CHUNK_DIR, exist_ok=True)
+
+
+@router.post("/upload_chunk")
+async def upload_chunk(
+    chunk: UploadFile,
+    index: int = Form(...),
+    filename: str = Form(...),
+    user_name: str = Form(...),
+    user_email: str = Form(...),
+    start_time: str = Form("0"),
+    duration: str = Form("0")
+):
+    file_dir = os.path.join(CHUNK_DIR, filename)
+    os.makedirs(file_dir, exist_ok=True)
+
+    chunk_path = os.path.join(file_dir, f"{index}.part")
+
+    with open(chunk_path, "wb") as f:
+        f.write(await chunk.read())
+
+    print(f"✔ Chunk {index} recebido para {filename}")
+
+    return JSONResponse({"status": "chunk_received"})
+
+
+@router.get("/upload_chunk")
+async def finish_upload(filename: str, finish: int = 0):
+    if finish != 1:
+        return JSONResponse({"error": "invalid_finish_flag"}, status_code=400)
+
+    file_dir = os.path.join(CHUNK_DIR, filename)
+
+    if not os.path.exists(file_dir):
+        return JSONResponse({"error": "no_chunks_found"}, status_code=400)
+
+    parts = sorted(
+        [p for p in os.listdir(file_dir) if p.endswith(".part")],
+        key=lambda x: int(x.replace(".part", ""))
+    )
+
+    final_path = os.path.join(CHUNK_DIR, f"final_{filename}")
+
+    with open(final_path, "wb") as final_file:
+        for part in parts:
+            with open(os.path.join(file_dir, part), "rb") as p:
+                final_file.write(p.read())
+
+    print(f"✔ Vídeo reconstruído: {final_path}")
+
+    json_data = {
+        "email": "",
+        "name": "",
+        "start": 0,
+        "duration": 0
+    }
+
+    json_bytes = str(json_data).encode("utf-8")
+
+    remote_video = f"incoming/{filename}"
+    remote_json = f"incoming/{filename.replace('.mp4', '.json')}"
+
+    with open(final_path, "rb") as f:
+        upload_bytes(remote_video, f.read(), "video/mp4")
+
+    upload_bytes(remote_json, json_bytes, "application/json")
+
+    print("✔ Vídeo + JSON enviados para Backblaze")
+
+    shutil.rmtree(file_dir)
+    os.remove(final_path)
+
+    print("✔ Limpeza completa")
+
+    return JSONResponse({"status": "upload_complete"})
