@@ -25,6 +25,7 @@ def upload_bytes(path: str, data: bytes, content_type: str):
     b2_api = get_b2_client()
     bucket = b2_api.get_bucket_by_name(os.getenv("B2_BUCKET_NAME"))
 
+    print(f"⬆️ Upload para B2: {path} ({len(data)} bytes)")
     bucket.upload_bytes(
         data,
         file_name=path,
@@ -39,6 +40,7 @@ def download_bytes(path: str) -> bytes:
     b2_api = get_b2_client()
     bucket = b2_api.get_bucket_by_name(os.getenv("B2_BUCKET_NAME"))
 
+    print(f"⬇️ Download de B2: {path}")
     file_info, file_stream = bucket.download_file_by_name(path)
     return file_stream.read()
 
@@ -49,6 +51,8 @@ def move_file(old_path: str, new_path: str):
     """
     b2_api = get_b2_client()
     bucket = b2_api.get_bucket_by_name(os.getenv("B2_BUCKET_NAME"))
+
+    print(f"🔁 Mover ficheiro: {old_path} → {new_path}")
 
     file_info, _ = bucket.download_file_by_name(old_path)
 
@@ -68,6 +72,7 @@ def list_prefix(prefix: str):
     b2_api = get_b2_client()
     bucket = b2_api.get_bucket_by_name(os.getenv("B2_BUCKET_NAME"))
 
+    print(f"📂 Listar prefixo: {prefix}")
     return list(bucket.ls(prefix=prefix))
 
 
@@ -79,12 +84,13 @@ def hard_delete_file(path: str):
     b2_api = get_b2_client()
     bucket = b2_api.get_bucket_by_name(os.getenv("B2_BUCKET_NAME"))
 
-    versions = bucket.list_file_versions(path)
+    print(f"🗑 HARD DELETE: {path}")
 
+    versions = bucket.list_file_versions(path)
     deleted_any = False
 
-    for file_version in versions:  # ← CORRETO para B2SDK v2
-        print(f"🔥 HARD DELETE: {path} (version {file_version.id_})")
+    for file_version in versions:
+        print(f"🔥 Apagar versão: {file_version.id_}")
         bucket.delete_file_version(file_version.id_, file_version.file_name)
         deleted_any = True
 
