@@ -6,6 +6,9 @@ import os
 import json
 import subprocess
 import boto3
+from api.upload_chunk import router as chunk_router
+
+app.include_router(chunk_router)
 
 app = FastAPI()
 
