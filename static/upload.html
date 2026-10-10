@@ -1,150 +1,103 @@
-<!DOCTYPE html>
-<html lang="pt">
-<head>
-  <meta charset="UTF-8">
-  <title>Upload de Vídeo de Handball</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 500px;
-      margin: 40px auto;
-      padding: 20px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
+import os
+import shutil
+from fastapi import APIRouter, UploadFile, Form
+from fastapi.responses import JSONResponse
+from api.b2_client import upload_bytes
+
+router = APIRouter()
+
+CHUNK_DIR = "/tmp/chunks"
+
+# garantir que existe
+os.makedirs(CHUNK_DIR, exist_ok=True)
+
+
+@router.post("/upload_chunk")
+async def upload_chunk(
+    chunk: UploadFile,
+    index: int = Form(...),
+    filename: str = Form(...),
+    user_name: str = Form(...),
+    user_email: str = Form(...),
+    start_time: str = Form("0"),
+    duration: str = Form("0")
+):
+    """
+    Recebe um chunk e guarda-o no /tmp/chunks/<filename>/<index>.part
+    """
+
+    # pasta do ficheiro
+    file_dir = os.path.join(CHUNK_DIR, filename)
+    os.makedirs(file_dir, exist_ok=True)
+
+    # caminho do chunk
+    chunk_path = os.path.join(file_dir, f"{index}.part")
+
+    # guardar chunk
+    with open(chunk_path, "wb") as f:
+        f.write(await chunk.read())
+
+    print(f"✔ Chunk {index} recebido para {filename}")
+
+    return JSONResponse({"status": "chunk_received"})
+
+
+@router.get("/upload_chunk")
+async def finish_upload(filename: str, finish: int = 0):
+    """
+    Junta todos os chunks e cria o ficheiro final.
+    """
+
+    if finish != 1:
+        return JSONResponse({"error": "invalid_finish_flag"}, status_code=400)
+
+    file_dir = os.path.join(CHUNK_DIR, filename)
+
+    if not os.path.exists(file_dir):
+        return JSONResponse({"error": "no_chunks_found"}, status_code=400)
+
+    # ordenar chunks
+    parts = sorted(
+        [p for p in os.listdir(file_dir) if p.endswith(".part")],
+        key=lambda x: int(x.replace(".part", ""))
+    )
+
+    final_path = os.path.join(CHUNK_DIR, f"final_{filename}")
+
+    # juntar chunks
+    with open(final_path, "wb") as final_file:
+        for part in parts:
+            part_path = os.path.join(file_dir, part)
+            with open(part_path, "rb") as p:
+                final_file.write(p.read())
+
+    print(f"✔ Vídeo reconstruído: {final_path}")
+
+    # criar JSON
+    json_data = {
+        "email": "",
+        "name": "",
+        "start": 0,
+        "duration": 0
     }
-    label {
-      font-weight: bold;
-      margin-top: 15px;
-      display: block;
-    }
-    input[type="file"], input[type="email"], input[type="text"], input[type="number"] {
-      width: 100%;
-      padding: 8px;
-      margin-top: 5px;
-    }
-    button {
-      margin-top: 20px;
-      padding: 10px 20px;
-      background-color: #0078ff;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    button:hover {
-      background-color: #005fcc;
-    }
-    #progress-container {
-      margin-top: 20px;
-      display: none;
-    }
-    #progress-bar {
-      width: 0%;
-      height: 20px;
-      background-color: #0078ff;
-      border-radius: 4px;
-    }
-    #status {
-      margin-top: 10px;
-      font-weight: bold;
-    }
-  </style>
-</head>
-<body>
 
-  <h2>Upload de Vídeo de Handball</h2>
-  <p>Envie o seu vídeo para ser analisado automaticamente.</p>
+    json_bytes = str(json_data).encode("utf-8")
 
-  <form id="uploadForm">
-    <label for="file">Vídeo (.mp4)</label>
-    <input type="file" id="file" name="file" accept="video/mp4" required>
+    # enviar para Backblaze
+    remote_video = f"incoming/{filename}"
+    remote_json = f"incoming/{filename.replace('.mp4', '.json')}"
 
-    <label for="user_name">O seu nome</label>
-    <input type="text" id="user_name" name="user_name" required>
+    with open(final_path, "rb") as f:
+        upload_bytes(remote_video, f.read(), "video/mp4")
 
-    <label for="user_email">O seu email</label>
-    <input type="email" id="user_email" name="user_email" required>
+    upload_bytes(remote_json, json_bytes, "application/json")
 
-    <label for="start_time">Início (segundos)</label>
-    <input type="number" id="start_time" name="start_time" min="0">
+    print("✔ Vídeo + JSON enviados para Backblaze")
 
-    <label for="duration">Duração (segundos)</label>
-    <input type="number" id="duration" name="duration" min="1">
+    # limpar chunks
+    shutil.rmtree(file_dir)
+    os.remove(final_path)
 
-    <button type="submit">Enviar vídeo</button>
-  </form>
+    print("✔ Limpeza completa")
 
-  <div id="progress-container">
-    <div id="progress-bar"></div>
-  </div>
-
-  <div id="status"></div>
-
-<script>
-const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
-const UPLOAD_URL = "https://handball-video-pipeline-git-1007213034860.europe-west1.run.app/upload_chunk";
-
-const form = document.getElementById("uploadForm");
-const progressContainer = document.getElementById("progress-container");
-const progressBar = document.getElementById("progress-bar");
-const status = document.getElementById("status");
-
-form.addEventListener("submit", async function(event) {
-  event.preventDefault();
-
-  const file = document.getElementById("file").files[0];
-  const name = document.getElementById("user_name").value;
-  const email = document.getElementById("user_email").value;
-  const start = document.getElementById("start_time").value;
-  const duration = document.getElementById("duration").value;
-
-  if (!file) {
-    alert("Selecione um vídeo.");
-    return;
-  }
-
-  progressContainer.style.display = "block";
-  progressBar.style.width = "0%";
-  progressBar.style.backgroundColor = "#0078ff";
-  status.innerHTML = "A enviar vídeo...";
-
-  let startByte = 0;
-  let index = 0;
-  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-
-  while (startByte < file.size) {
-    const chunk = file.slice(startByte, startByte + CHUNK_SIZE);
-
-    const formData = new FormData();
-    formData.append("chunk", chunk);
-    formData.append("index", index);
-    formData.append("filename", file.name);
-    formData.append("user_name", name);
-    formData.append("user_email", email);
-    formData.append("start_time", start);
-    formData.append("duration", duration);
-
-    status.innerHTML = `A enviar chunk ${index + 1} de ${totalChunks}...`;
-
-    await fetch(UPLOAD_URL, {
-      method: "POST",
-      body: formData
-    });
-
-    startByte += CHUNK_SIZE;
-    index++;
-
-    const percent = Math.min(100, (startByte / file.size) * 100);
-    progressBar.style.width = percent + "%";
-  }
-
-  status.innerHTML = "A finalizar upload...";
-  await fetch(`${UPLOAD_URL}?finish=1&filename=${file.name}`);
-
-  progressBar.style.backgroundColor = "#00c851";
-  status.innerHTML = "✔ Vídeo enviado com sucesso! Irá receber o resultado por email.";
-});
-</script>
-
-</body>
-</html>
+    return JSONResponse({"status": "upload_complete"})
