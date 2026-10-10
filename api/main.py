@@ -45,7 +45,10 @@ FINAL_DIR = "/tmp/final"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(FINAL_DIR, exist_ok=True)
 
-# === UPLOAD CHUNK ===
+# ============================================================
+#   UPLOAD CHUNK — POST
+# ============================================================
+
 @app.post("/upload_chunk")
 async def upload_chunk(
     chunk: UploadFile = None,
@@ -58,10 +61,14 @@ async def upload_chunk(
     finish: int = None
 ):
 
-    # === FINALIZAÇÃO ===
+    # ============================================================
+    #   FINALIZAÇÃO — juntar chunks e fazer upload
+    # ============================================================
+
     if finish == 1:
         final_path = f"{FINAL_DIR}/{filename}"
 
+        # Juntar todos os chunks
         with open(final_path, "wb") as outfile:
             i = 0
             while True:
@@ -73,34 +80,54 @@ async def upload_chunk(
                 os.remove(part)
                 i += 1
 
-        # === JSON METADATA ===
-        json_path = f"{FINAL_DIR}/{filename.replace('.mp4', '.json')}"
-        metadata = {
-            "email": user_email,
-            "name": user_name,
-            "start": int(start_time) if start_time else 0,
-            "duration": int(duration) if duration else 0
-        }
+        # ============================================================
+        #   Criar JSON apenas se metadata existir
+        # ============================================================
 
-        with open(json_path, "w") as f:
-            json.dump(metadata, f)
+        if user_email or user_name:
+            json_path = f"{FINAL_DIR}/{filename.replace('.mp4', '.json')}"
+            metadata = {
+                "email": user_email,
+                "name": user_name,
+                "start": int(start_time) if start_time else 0,
+                "duration": int(duration) if duration else 0
+            }
 
-        # === UPLOAD PARA BACKBLAZE ===
-        remote_video = f"incoming/{filename}"
-        remote_json = f"incoming/{filename.replace('.mp4', '.json')}"
+            with open(json_path, "w") as f:
+                json.dump(metadata, f)
 
-        s3.upload_file(final_path, BUCKET_NAME, remote_video)
-        s3.upload_file(json_path, BUCKET_NAME, remote_json)
+            s3.upload_file(json_path, BUCKET_NAME, f"incoming/{filename.replace('.mp4', '.json')}")
 
-        # === CHAMAR PIPELINE ===
+        # ============================================================
+        #   Upload do vídeo (SEMPRE)
+        # ============================================================
+
+        s3.upload_file(final_path, BUCKET_NAME, f"incoming/{filename}")
+
+        # ============================================================
+        #   Chamar pipeline
+        # ============================================================
+
         subprocess.Popen(["python3", "process_video.py"])
 
-        return {"status": "completed", "video": remote_video}
+        return {"status": "completed", "video": filename}
 
-    # === RECEBER CHUNK ===
+    # ============================================================
+    #   RECEBER CHUNK NORMAL
+    # ============================================================
+
     part_path = f"{UPLOAD_DIR}/{filename}.part{index}"
 
     with open(part_path, "wb") as f:
         f.write(await chunk.read())
 
     return {"status": "ok", "chunk": index}
+
+
+# ============================================================
+#   GET /upload_chunk — evitar 405 no Safari e bots
+# ============================================================
+
+@app.get("/upload_chunk")
+def upload_chunk_get():
+    return {"status": "use POST for chunks", "finish": "use GET only with filename"}
