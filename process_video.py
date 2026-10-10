@@ -19,7 +19,7 @@ print("==============================\n")
 # SWITCHES
 # ============================
 
-USE_TEAM_CLASSIFIER = True  # True = ON, False = OFF
+USE_TEAM_CLASSIFIER = False  # True = ON, False = OFF
 
 # ============================
 # CONFIG
