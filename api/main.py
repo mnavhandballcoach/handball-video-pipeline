@@ -2,19 +2,22 @@ from fastapi import FastAPI, UploadFile, Form
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from api.upload import router as chunk_router
 
 import os
 import json
 import subprocess
 import boto3
 
-
-app.include_router(chunk_router)
+# ============================================================
+#   FASTAPI APP
+# ============================================================
 
 app = FastAPI()
 
-# === CORS ===
+# ============================================================
+#   CORS
+# ============================================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,7 +26,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# === Servir HTML ===
+# ============================================================
+#   STATIC HTML
+# ============================================================
+
 static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
@@ -31,7 +37,10 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 def upload_page():
     return open(os.path.join(static_dir, "upload.html"), "r", encoding="utf-8").read()
 
-# === Backblaze B2 (via boto3 S3 API) ===
+# ============================================================
+#   BACKBLAZE B2 (via boto3 S3 API)
+# ============================================================
+
 BUCKET_NAME = os.getenv("B2_BUCKET_NAME")
 S3_ENDPOINT = os.getenv("B2_ENDPOINT")
 
@@ -101,7 +110,11 @@ async def upload_chunk(
             with open(json_path, "w") as f:
                 json.dump(metadata, f)
 
-            s3.upload_file(json_path, BUCKET_NAME, f"incoming/{filename.replace('.mp4', '.json')}")
+            s3.upload_file(
+                json_path,
+                BUCKET_NAME,
+                f"incoming/{filename.replace('.mp4', '.json')}"
+            )
 
         # ============================================================
         #   Upload do vídeo (SEMPRE)
