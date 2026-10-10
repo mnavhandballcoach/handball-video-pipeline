@@ -2,11 +2,13 @@ from fastapi import FastAPI, UploadFile, Form
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from api.upload_chunk import router as chunk_router
+
 import os
 import json
 import subprocess
 import boto3
-from api.upload_chunk import router as chunk_router
+
 
 app.include_router(chunk_router)
 
