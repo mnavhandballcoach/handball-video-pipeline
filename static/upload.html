@@ -105,10 +105,12 @@ form.addEventListener("submit", async function(event) {
 
   progressContainer.style.display = "block";
   progressBar.style.width = "0%";
+  progressBar.style.backgroundColor = "#0078ff";
   status.innerHTML = "A enviar vídeo...";
 
   let startByte = 0;
   let index = 0;
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
   while (startByte < file.size) {
     const chunk = file.slice(startByte, startByte + CHUNK_SIZE);
@@ -122,6 +124,8 @@ form.addEventListener("submit", async function(event) {
     formData.append("start_time", start);
     formData.append("duration", duration);
 
+    status.innerHTML = `A enviar chunk ${index + 1} de ${totalChunks}...`;
+
     await fetch(UPLOAD_URL, {
       method: "POST",
       body: formData
@@ -134,7 +138,7 @@ form.addEventListener("submit", async function(event) {
     progressBar.style.width = percent + "%";
   }
 
-  // sinalizar fim
+  status.innerHTML = "A finalizar upload...";
   await fetch(`${UPLOAD_URL}?finish=1&filename=${file.name}`);
 
   progressBar.style.backgroundColor = "#00c851";
